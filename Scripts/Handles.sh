@@ -84,7 +84,7 @@ if [ -d *"openwrt-tailscale"* ]; then
 
 	sed -i '/\/files/d' ./package/tailscale/Makefile
 
-	cd $PKG_PATH && echo "tailscale has been fixed!"
+	cd $PKG_PATH && echo "my tailscale has been fixed!"
 fi
 
 
