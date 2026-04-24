@@ -81,8 +81,10 @@ if [ -d *"openwrt-tailscale"* ]; then
 	echo " "
 
 	cd ./openwrt-tailscale/
+	mv ./package/tailscale ./tailscale
+	rm -rf  .config .github build_scripts feed_template LICENSE* NOTICE install* package
 
-	sed -i '/\/files/d' /Makefile $(find ./package/tailscale/ -type f -name "Makefile")
+	sed -i '/\/files/d' $(find ./tailscale/ -type f -name "Makefile")
 
 	cd $PKG_PATH && echo "my tailscale has been fixed!"
 fi
