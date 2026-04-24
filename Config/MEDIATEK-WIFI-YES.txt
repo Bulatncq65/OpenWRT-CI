@@ -62,7 +62,8 @@ CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_zbtlink_zbt-z8106ax-t=y
 CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_zyxel_ex5700-telenor=y
 
 
-
+CONFIG_TARGET_OPTIONS=y
+CONFIG_TARGET_OPTIMIZATION="-O2 -pipe -mcpu=cortex-a53+crypto+crc -mtune=cortex-a53"
 
 CONFIG_PACKAGE_luci-app-cpufreq=y
 
