@@ -82,7 +82,7 @@ if [ -d *"openwrt-tailscale"* ]; then
 
 	cd ./openwrt-tailscale/
 
-	sed -i '/\/files/d' ./package/tailscale/Makefile
+	sed -i '/\/files/d' /Makefile $(find ./package/tailscale/ -type f -name "Makefile")
 
 	cd $PKG_PATH && echo "my tailscale has been fixed!"
 fi
