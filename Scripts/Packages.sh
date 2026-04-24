@@ -60,7 +60,7 @@ UPDATE_PACKAGE "openclash" "vernesong/OpenClash" "dev" "pkg"
 UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
 UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 
-#UPDATE_PACKAGE "tailscale" "MmDawN/openwrt-tailscale" "main" "pkg"
+UPDATE_PACKAGE "myscale" "MmDawN/openwrt-tailscale" "main" "" "tailscale"
 UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
 
 UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"
@@ -77,10 +77,10 @@ UPDATE_PACKAGE "quickfile" "sbwml/luci-app-quickfile" "main"
 UPDATE_PACKAGE "viking" "VIKINGYFY/packages" "main" "" "luci-app-timewol luci-app-wolplus"
 UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
 
-UPDATE_PACKAGE "daed" "QiuSimons/luci-app-daed" "kix"
-UPDATE_PACKAGE "vmlinux-btf" "QiuSimons/vmlinux-btf" "master"
 UPDATE_PACKAGE "wrtbwmon" "pyrovski/wrtbwmon" "master"
 UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
+UPDATE_PACKAGE "daed" "QiuSimons/luci-app-daed" "kix"
+UPDATE_PACKAGE "vmlinux-btf" "QiuSimons/vmlinux-btf" "master"
 
 
 #更新软件包版本
