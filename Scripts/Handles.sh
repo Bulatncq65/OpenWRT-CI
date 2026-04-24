@@ -77,6 +77,16 @@ if [ -f "$TS_FILE" ]; then
 
 	cd $PKG_PATH && echo "tailscale has been fixed!"
 fi
+if [ -d *"openwrt-tailscale"* ]; then
+	echo " "
+
+	cd ./openwrt-tailscale/
+
+	sed -i '/\/files/d' ./package/tailscale/Makefile
+
+	cd $PKG_PATH && echo "tailscale has been fixed!"
+fi
+
 
 #修复Rust编译失败
 RUST_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/rust/Makefile")
