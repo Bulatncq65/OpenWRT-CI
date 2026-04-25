@@ -61,7 +61,7 @@ UPDATE_PACKAGE "passwall" "Openwrt-Passwall/openwrt-passwall" "main" "pkg"
 UPDATE_PACKAGE "passwall2" "Openwrt-Passwall/openwrt-passwall2" "main" "pkg"
 
 #UPDATE_PACKAGE "tailscale" "MmDawN/openwrt-tailscale" "main"
-UPDATE_PACKAGE "tailscale" "GuNanOvO/openwrt-tailscale" "main"
+#UPDATE_PACKAGE "tailscale" "GuNanOvO/openwrt-tailscale" "main"
 UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
 
 UPDATE_PACKAGE "ddns-go" "sirpdboy/luci-app-ddns-go" "main"
