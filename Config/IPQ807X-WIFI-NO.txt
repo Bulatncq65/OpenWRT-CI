@@ -27,7 +27,7 @@ CONFIG_PACKAGE_ath11k-firmware-ipq8074-ddwrt=n
 CONFIG_PACKAGE_ath11k-firmware-qcn9074=n
 CONFIG_PACKAGE_ath11k-firmware-qcn9074-ddwrt=n
 
-CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=1024
+#CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=1024
 CONFIG_SQUASHFS_XZ=y
 CONFIG_SQUASHFS_XZ_OPTIONS="-Xpreset 9 -Xe -Xbcj arm -Xlc 0 -Xlp 2 -Xpb 2"
 CONFIG_TARGET_OPTIONS=y
@@ -36,7 +36,8 @@ CONFIG_TARGET_OPTIMIZATION="-O3 -pipe -mcpu=cortex-a53+crypto+crc -mtune=cortex-
 CONFIG_PACKAGE_luci-app-cpufreq=y
 CONFIG_PACKAGE_luci-app-tailscale=y
 # dead支持
-
+CONFIG_PACKAGE_kmod-sched-bpf=y
+CONFIG_PACKAGE_kmod-sched-core=y
 CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
 #CONFIG_PACKAGE_vmlinux-btf=y
 #CONFIG_PACKAGE_luci-app-daed=y
