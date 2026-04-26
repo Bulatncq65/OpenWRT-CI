@@ -34,6 +34,7 @@ CONFIG_TARGET_OPTIMIZATION="-O3 -pipe -march=x86-64-v2 -mtune=generic -maes -mpc
 
 CONFIG_PACKAGE_luci-app-cpufreq=y
 CONFIG_PACKAGE_luci-app-tailscale=y
+CONFIG_PACKAGE_luci-app-usb-printer=y
 # dead支持
 #CONFIG_DEVEL=y
 #CONFIG_KERNEL_DEBUG_INFO=y

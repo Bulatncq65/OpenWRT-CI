@@ -67,10 +67,11 @@ CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_zyxel_ex5700-telenor=y
 CONFIG_SQUASHFS_XZ=y
 CONFIG_SQUASHFS_XZ_OPTIONS="-Xpreset 9 -Xe -Xbcj arm -Xlc 0 -Xlp 2 -Xpb 2"
 CONFIG_TARGET_OPTIONS=y
-CONFIG_TARGET_OPTIMIZATION="-O3 -pipe -mcpu=cortex-a53+crypto+crc -mtune=cortex-a53"
+CONFIG_TARGET_OPTIMIZATION="-Os -pipe -mcpu=cortex-a53+crypto+crc -mtune=cortex-a53"
 
 CONFIG_PACKAGE_luci-app-cpufreq=y
 CONFIG_PACKAGE_luci-app-tailscale=y
+CONFIG_PACKAGE_luci-app-usb-printer=y
 # dead支持
 #CONFIG_DEVEL=y
 #CONFIG_KERNEL_DEBUG_INFO=y

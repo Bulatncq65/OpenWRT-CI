@@ -21,6 +21,7 @@ CONFIG_TARGET_OPTIMIZATION="-O3 -pipe -mcpu=cortex-a53+crypto+crc -mtune=cortex-
 
 CONFIG_PACKAGE_luci-app-cpufreq=y
 CONFIG_PACKAGE_luci-app-tailscale=y
+CONFIG_PACKAGE_luci-app-usb-printer=y
 # dead支持
 #CONFIG_DEVEL=y
 #CONFIG_KERNEL_DEBUG_INFO=y
