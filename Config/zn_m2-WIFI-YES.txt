@@ -14,9 +14,9 @@ CONFIG_TARGET_OPTIMIZATION="-Os -pipe -mcpu=cortex-a53+crypto+crc -mtune=cortex-
 
 CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=y
 
-CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
-CONFIG_PACKAGE_luci-app-homeproxy=y
-CONFIG_PACKAGE_luci-app-momo=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=n
+CONFIG_PACKAGE_luci-app-homeproxy=n
+CONFIG_PACKAGE_luci-app-momo=n
 CONFIG_PACKAGE_luci-app-tailscale=y
 
 CONFIG_PACKAGE_luci-app-smartdns=y
