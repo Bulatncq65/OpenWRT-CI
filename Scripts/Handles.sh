@@ -85,7 +85,7 @@ fi
 
 #升级easytier 
 easytier_FILE=$(find ../luci-app-easytier/ -maxdepth 3 -type f -wholename "*/easytier/Makefile")
-if [ -f "$TS_FILE" ]; then
+if [ -f "$easytier_FILE" ]; then
 	echo " "
 
 	sed -i 's/EASYTIER_VERSION),2.6.2/EASYTIER_VERSION),2.6.3/g' $easytier_FILE
