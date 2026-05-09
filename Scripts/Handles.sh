@@ -84,7 +84,7 @@ if [ -f "$TS_FILE" ]; then
 fi
 
 #升级easytier 
-easytier_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/easytier/Makefile")
+easytier_FILE=$(find ../luci-app-easytier/ -maxdepth 3 -type f -wholename "*/easytier/Makefile")
 if [ -f "$TS_FILE" ]; then
 	echo " "
 
