@@ -83,6 +83,16 @@ if [ -f "$TS_FILE" ]; then
 	cd $PKG_PATH && echo "tailscale has been fixed!"
 fi
 
+#升级easytier 
+easytier_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/easytier/Makefile")
+if [ -f "$TS_FILE" ]; then
+	echo " "
+
+	sed -i 's/EASYTIER_VERSION),2.6.2/EASYTIER_VERSION),2.6.3/g' $easytier_FILE
+
+	cd $PKG_PATH && echo "easytier version is already the latest!"
+fi
+
 #修复Rust编译失败
 RUST_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/rust/Makefile")
 if [ -f "$RUST_FILE" ]; then
