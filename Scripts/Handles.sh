@@ -77,7 +77,8 @@ fi
 TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Makefile")
 if [ -f "$TS_FILE" ]; then
 	echo " "
-
+	sed -i "/PKG_VERSION:=1.9/cPKG_VERSION:=1.94.2" $TS_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
 	sed -i '/\/files/d' $TS_FILE
 
 	cd $PKG_PATH && echo "tailscale has been fixed!"
