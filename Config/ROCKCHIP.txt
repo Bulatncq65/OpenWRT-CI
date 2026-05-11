@@ -80,4 +80,4 @@ CONFIG_PACKAGE_ca-bundle=y
 CONFIG_PACKAGE_kmod-sched-bpf=y
 CONFIG_PACKAGE_kmod-sched-core=y
 #CONFIG_PACKAGE_vmlinux-btf=y
-CONFIG_PACKAGE_luci-app-daed=y
+#CONFIG_PACKAGE_luci-app-daed=y
