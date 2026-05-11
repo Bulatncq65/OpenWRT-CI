@@ -84,6 +84,18 @@ if [ -f "$TS_FILE" ]; then
 	cd $PKG_PATH && echo "tailscale has been fixed!"
 fi
 
+Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
+if [ -f "$Xray_FILE" ]; then
+	echo " "
+#	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.5.9" $Xray_FILE
+#	sed -i "/PKG_HASH:=/cPKG_HASH:=2cbd37f70b246d93aa4f1f5d4261cf2e622ff78ca71a7f7a4271aa517e749025" $Xray_FILE
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.5.3" $Xray_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=99c8899434cc2ba4d5236f641370d9219104e4e4e9734f230e5ef2d95131ec9c" $Xray_FILE
+
+	cd $PKG_PATH && echo "Xray version is already update to 26.5.3!"
+fi
+
+
 #升级easytier 
 easytier_FILE=$(find ./luci-app-easytier/ -maxdepth 3 -type f -wholename "*/easytier/Makefile")
 if [ -f "$easytier_FILE" ]; then
