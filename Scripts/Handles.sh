@@ -144,7 +144,7 @@ update_tailscale() {
     echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
 }
 
-# update_tailscale
+update_tailscale
 
 #修复TailScale配置文件冲突
 TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Makefile")
