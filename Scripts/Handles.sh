@@ -76,8 +76,8 @@ fi
 update_tailscale() {
     echo " " # 处理 UPX 压缩工具依赖
     echo "正在检查并配置 UPX 压缩工具依赖..."
-    local upx_dir="$PKG_PATH"upx
-  # local upx_dir="$GITHUB_WORKSPACE/wrt/upx"
+  # local upx_dir="$PKG_PATH"upx
+    local upx_dir="$GITHUB_WORKSPACE/wrt/upx"
     local upx_path="$upx_dir/upx"
 
     if [ ! -x "$upx_path" ]; then
