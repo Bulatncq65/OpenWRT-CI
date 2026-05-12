@@ -144,7 +144,7 @@ update_tailscale() {
     echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
 }
 
-update_tailscale
+# update_tailscale
 
 #修复TailScale配置文件冲突
 TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Makefile")
@@ -155,6 +155,7 @@ if [ -f "$TS_FILE" ]; then
 	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
 	sed -i '/\/files/d' $TS_FILE
     cat $TS_FILE
+	echo " "
 	cd $PKG_PATH && echo "tailscale 使用1.94.2版本"
 fi
 
