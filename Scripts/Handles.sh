@@ -76,7 +76,7 @@ fi
 update_tailscale() {
     # 处理 UPX 压缩工具依赖
     echo "正在检查并配置 UPX 压缩工具依赖..."
-    local upx_dir="$GITHUB_WORKSPACE/wrt/upx"
+    local upx_dir="$PKG_PATH/upx"
     local upx_path="$upx_dir/upx"
 
     if [ ! -x "$upx_path" ]; then
@@ -150,6 +150,7 @@ TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Ma
 if [ -f "$TS_FILE" ]; then
 	echo " "
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
+	sed -i "/PKG_RELEASE:=/cPKG_RELEASE:=2" $TS_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
 	sed -i '/\/files/d' $TS_FILE
 
