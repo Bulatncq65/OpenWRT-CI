@@ -174,8 +174,8 @@ easytier_FILE=$(find ./luci-app-easytier/ -maxdepth 3 -type f -wholename "*/easy
 if [ -f "$easytier_FILE" ]; then
 	echo " "
 
-#sed -i 's/EASYTIER_VERSION),2.6.2/EASYTIER_VERSION),2.6.3/g' $easytier_FILE
-	sed -i '/^PKG_VERSION:=$/c^PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' $easytier_FILE
+    sed -i 's/EASYTIER_VERSION),2.6.2/EASYTIER_VERSION),2.6.4/g' $easytier_FILE
+#	sed -i '/^PKG_VERSION:=$/c^PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' $easytier_FILE
     cat $easytier_FILE
 	echo " "
 	cd $PKG_PATH && echo "easytier-core version has update to 2.6.4!"
