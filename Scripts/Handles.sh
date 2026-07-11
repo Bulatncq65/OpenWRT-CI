@@ -104,7 +104,7 @@ update_tailscale() {
     fi
 
     # 使用GuNanOvO/openwrt-tailscale的tailscale 
-    local repo_url="https://github.com/GuNanOvO/openwrt-tailscale.git"
+    local repo_url="https://github.com/Bulatncq65/openwrt-tailscale.git"
     # tailscale 路径
     local target_dir="$GITHUB_WORKSPACE/wrt/feeds/packages/net/tailscale" 
     # 源码在大仓库里的实际相对路径
