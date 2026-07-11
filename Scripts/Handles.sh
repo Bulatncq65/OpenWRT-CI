@@ -144,9 +144,7 @@ update_tailscale() {
     echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
 }
 
-if [[ "${WRT_CONFIG,,}" == *"128M"* ]]; then
-	update_tailscale
-fi
+update_tailscale
 
 #修复TailScale配置文件冲突
 TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Makefile")
