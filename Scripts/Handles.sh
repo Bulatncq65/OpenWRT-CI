@@ -144,7 +144,9 @@ update_tailscale() {
     echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
 }
 
-update_tailscale
+if [[ "${WRT_CONFIG,,}" == *"128M"* ]]; then
+	update_tailscale
+fi
 
 #修复TailScale配置文件冲突
 TS_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/tailscale/Makefile")
@@ -162,10 +164,10 @@ fi
 Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
 if [ -f "$Xray_FILE" ]; then
 	echo " "
-	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.5.9" $Xray_FILE
-	sed -i "/PKG_HASH:=/cPKG_HASH:=2cbd37f70b246d93aa4f1f5d4261cf2e622ff78ca71a7f7a4271aa517e749025" $Xray_FILE
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.6.27" $Xray_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=3c2c13dbe9dfc8d0f83436566efcf76efb8b3d6f64f37499aea3d8e14d1c559b" $Xray_FILE
 
-	cd $PKG_PATH && echo "xray-core version has update to 26.5.9!"
+	cd $PKG_PATH && echo "xray-core version has update to 26.6.27!"
 fi
 
 
