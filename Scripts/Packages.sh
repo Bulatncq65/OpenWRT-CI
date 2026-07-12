@@ -85,6 +85,9 @@ UPDATE_PACKAGE "vmlinux-btf" "QiuSimons/vmlinux-btf" "master"
 #
 UPDATE_PACKAGE "openwrt-bandix-plus" "timsaya/openwrt-bandix-plus" "main"
 UPDATE_PACKAGE "luci-app-bandix-plus" "timsaya/luci-app-bandix-plus" "main"
+UPDATE_PACKAGE "luci-app-lucky" "gdy666/luci-app-lucky" "main"
+UPDATE_PACKAGE "mwan3" "dl12345/mwan3" "openwrt-25.12"
+UPDATE_PACKAGE "mwan3" "dl12345/luci-app-mwan3" "openwrt-25.12"
 
 
 
