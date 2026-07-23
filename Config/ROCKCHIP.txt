@@ -65,7 +65,7 @@ CONFIG_PACKAGE_luci-app-cpufreq=y
 CONFIG_PACKAGE_luci-app-tailscale=y
 CONFIG_PACKAGE_luci-app-zerotier=y
 CONFIG_PACKAGE_luci-app-usb-printer=y
-CONFIG_PACKAGE_luci-app-bandix-plus=y
+CONFIG_PACKAGE_luci-app-bandix=y
 
 # dead支持
 #CONFIG_DEVEL=y
