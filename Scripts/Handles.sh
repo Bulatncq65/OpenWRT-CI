@@ -203,14 +203,103 @@ if [ -d "$PKG_PATH/luci-app-mini-diskmanager" ]; then
 	fi
 fi
 
+
+update_tailscale() {
+    echo " " # 处理 UPX 压缩工具依赖
+    echo "正在检查并配置 UPX 压缩工具依赖..."
+  # local upx_dir="$PKG_PATH"upx
+    local upx_dir="$GITHUB_WORKSPACE/wrt/upx"
+    local upx_path="$upx_dir/upx"
+
+    if [ ! -x "$upx_path" ]; then
+        mkdir -p "$upx_dir"
+        
+        # 检查系统全局是否已经安装了 upx
+        if ! command -v upx &> /dev/null; then
+            echo "系统未安装 upx, 正在尝试通过 apt-get 自动安装..."
+            # 这里的 || true 是为了防止网络卡顿时 update 报错导致整个脚本退出
+            sudo apt-get update -y || true
+            sudo apt-get install -y upx-ucl
+        fi
+        
+        # 找到系统 upx 的绝对路径，并建立 Makefile 需要的软链接
+        local sys_upx=$(command -v upx)
+        if [ -n "$sys_upx" ]; then
+            ln -sf "$sys_upx" "$upx_path"
+            echo "✔ 成功创建 UPX 软链接: $sys_upx -> $upx_path"
+        else
+            echo "❌ 警告: UPX 安装失败或未找到，稍后的编译可能仍然会报错！" >&2
+        fi
+    else
+        echo "✔ UPX 工具已就绪 ($upx_path)"
+    fi
+
+    # 使用GuNanOvO/openwrt-tailscale的tailscale 
+    local repo_url="https://github.com/Bulatncq65/openwrt-tailscale.git"
+    # tailscale 路径
+    local target_dir="$GITHUB_WORKSPACE/wrt/feeds/packages/net/tailscale" 
+    # 源码在大仓库里的实际相对路径
+    local sub_dir="package/tailscale"
+    # 设置一个临时克隆目录
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+
+    # 1. 如果存在旧的，先删掉
+    if [ -d "$target_dir" ]; then
+        echo "正在从 $target_dir 删除旧的 tailscale..."
+        rm -rf "$target_dir"
+    fi
+
+    echo "正在使用稀疏克隆(sparse-checkout)拉取最新版 tailscale..."
+    
+    # 初始化并拉取仓库的骨架（不下载具体文件，极速）
+    rm -rf "$tmp_dir"
+    if ! git clone --depth 1 --filter=blob:none --sparse "$repo_url" "$tmp_dir"; then
+        echo "错误：从 $repo_url 拉取仓库骨架失败" >&2
+        exit 1
+    fi
+
+    # 告诉 Git 我们只需要 package/tailscale 这一个文件夹
+    git -C "$tmp_dir" sparse-checkout set "$sub_dir"
+
+    # 将下载好的子文件夹移动到我们真正需要的目标路径
+    mv "$tmp_dir/$sub_dir" "$target_dir"
+    # 修改 Makefile（删除包含 /builder 的行）
+    sed -i 's|$(TOPDIR)/upx/upx|upx|g' "$target_dir/Makefile"   # ← 新增这一行
+    #if ! sed -i '/\/builder/d' "$target_dir/Makefile"; then
+    #    echo "错误：修改 Makefile 失败" >&2
+    #    exit 1
+    #fi
+    # 清除临时文件夹的残留
+    rm -rf "$tmp_dir"
+    
+    echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
+}
+
+update_tailscale
+
+Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
+if [ -f "$Xray_FILE" ]; then
+	echo " "
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
+
+	cd $PKG_PATH && echo "xray-core version has update to 26.6.27!"
+fi
+
 #修复TailScale配置文件冲突
 FEEDS_PACKAGES="$PKG_PATH/../feeds/packages"
 TS_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$TS_FILE" ]; then
 	echo " "
-
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
+#	sed -i "/PKG_RELEASE:=/cPKG_RELEASE:=1" $TS_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
 	if sed -i '/\/files/d' "$TS_FILE"; then
 		echo "tailscale has been fixed!"
+	    cat $TS_FILE
+	echo " " && echo "tailscale 使用1.94.2版本"	
+    
 	else
 		echo "tailscale fix failed; continuing!"
 	fi

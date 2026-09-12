@@ -82,6 +82,17 @@ UPDATE_PACKAGE "airpi3000m" "LianXia233/luci-app-airpi3000m-fancontrol" "main"
 UPDATE_PACKAGE "h5000m" "LianXia233/luci-app-h5000m-netmode" "main"
 UPDATE_PACKAGE "qmodem-generic" "LianXia233/luci-app-qmodem-generic" "main"
 
+UPDATE_PACKAGE "wrtbwmon" "pyrovski/wrtbwmon" "master"
+UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
+UPDATE_PACKAGE "openwrt-bandix" "timsaya/openwrt-bandix" "main"
+UPDATE_PACKAGE "luci-app-bandix" "timsaya/luci-app-bandix" "main"
+UPDATE_PACKAGE "luci-app-lucky" "gdy666/luci-app-lucky" "main"
+
+UPDATE_PACKAGE "daed" "QiuSimons/luci-app-daed" "kix"
+
+#UPDATE_PACKAGE "mwan3" "dl12345/mwan3" "openwrt-25.12"
+#UPDATE_PACKAGE "luci-app-mwan3" "dl12345/luci-app-mwan3" "openwrt-25.12"
+
 #更新软件包版本
 UPDATE_VERSION() {
 	local PKG_NAME=$1
