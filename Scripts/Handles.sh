@@ -293,9 +293,9 @@ TS_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/tailscale/Ma
 if [ -f "$TS_FILE" ]; then
 	echo " "
 #	sed -i "/PKG_RELEASE:=/cPKG_RELEASE:=1" $TS_FILE
-	#sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
-	#sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
-	#echo " " && echo "tailscale 使用1.94.2版本"	
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
+	echo " " && echo "tailscale 使用1.94.2版本"	
 	if sed -i '/\/files/d' "$TS_FILE"; then
 		echo "tailscale has been fixed!"
 	    cat $TS_FILE
