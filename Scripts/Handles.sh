@@ -276,7 +276,7 @@ update_tailscale() {
     echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
 }
 
-update_tailscale
+#update_tailscale
 
 Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
 if [ -f "$Xray_FILE" ]; then
