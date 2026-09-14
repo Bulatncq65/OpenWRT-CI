@@ -284,7 +284,7 @@ if [ -f "$Xray_FILE" ]; then
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
 
-	cd $PKG_PATH && echo "xray-core version has update to 26.6.27!"
+	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
 fi
 
 #修复TailScale配置文件冲突
@@ -295,11 +295,10 @@ if [ -f "$TS_FILE" ]; then
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
 #	sed -i "/PKG_RELEASE:=/cPKG_RELEASE:=1" $TS_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
+	echo " " && echo "tailscale 使用1.94.2版本"	
 	if sed -i '/\/files/d' "$TS_FILE"; then
 		echo "tailscale has been fixed!"
 	    cat $TS_FILE
-	echo " " && echo "tailscale 使用1.94.2版本"	
-    
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
