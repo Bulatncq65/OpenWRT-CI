@@ -203,6 +203,148 @@ if [ -d "$PKG_PATH/luci-app-mini-diskmanager" ]; then
 	fi
 fi
 
+# ============================================
+# 恢复 golang1.26 包 (用于编译 Tailscale 1.94.2)
+# ============================================
+GOLANG126_DIR="$PKG_PATH/../feeds/packages/lang/golang/golang1.26"
+GOLANG126_MAKEFILE="$GOLANG126_DIR/Makefile"
+
+if [ ! -f "$GOLANG126_MAKEFILE" ]; then
+    echo " "
+    echo "golang1.26 Makefile not found, restoring..."
+    mkdir -p "$GOLANG126_DIR"
+    cat > "$GOLANG126_MAKEFILE" << 'GOLANG126_EOF'
+#
+# Copyright (C) 2018-2023 Jeffery To
+# Copyright (C) 2025-2026 George Sapkin
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=golang1.26
+GO_VERSION_MAJOR_MINOR:=1.26
+GO_VERSION_PATCH:=7
+GO_VERSION_RC:=
+GO_BOOTSTRAP_VERSION:=bootstrap
+PKG_HASH:=0ed24eac755105085b89fe9cabc2742b91a0ad7b94b59d3ad364918ebc8956ad
+
+PKG_VERSION:=$(GO_VERSION_MAJOR_MINOR)$(if $(GO_VERSION_RC),.0)$(if $(GO_VERSION_PATCH),.$(GO_VERSION_PATCH))
+PKG_FILE_VERSION:=$(GO_VERSION_MAJOR_MINOR)$(if $(GO_VERSION_RC),rc$(GO_VERSION_RC))$(if $(GO_VERSION_PATCH),.$(GO_VERSION_PATCH))
+PKG_RELEASE:=1
+
+GO_SOURCE_URLS:=https://go.dev/dl/ \
+                https://golang.google.cn/dl/ \
+                https://mirrors.nju.edu.cn/golang/ \
+                https://mirrors.ustc.edu.cn/golang/
+
+PKG_SOURCE:=go$(PKG_FILE_VERSION).src.tar.gz
+PKG_SOURCE_URL:=$(GO_SOURCE_URLS)
+
+PKG_MAINTAINER:=George Sapkin <george@sapk.in>
+PKG_LICENSE:=BSD-3-Clause
+PKG_LICENSE_FILES:=LICENSE
+PKG_CPE_ID:=cpe:/a:golang:go
+
+PKG_BUILD_DEPENDS:=$(PKG_NAME)/host
+PKG_BUILD_DIR:=$(BUILD_DIR)/go-$(PKG_VERSION)
+PKG_BUILD_PARALLEL:=1
+PKG_BUILD_FLAGS:=no-mips16
+
+PKG_GO_PREFIX:=/usr
+PKG_GO_VERSION_ID:=$(GO_VERSION_MAJOR_MINOR)
+
+HOST_BUILD_DEPENDS:=golang$(if $(filter bootstrap,$(GO_BOOTSTRAP_VERSION)),-)$(GO_BOOTSTRAP_VERSION)/host
+HOST_BUILD_DIR:=$(BUILD_DIR_HOST)/go-$(PKG_VERSION)
+HOST_BUILD_PARALLEL:=1
+
+# From go tool dist list
+HOST_GO_VALID_OS_ARCH:= \
+  aix/ppc64 \
+  android/386 \
+  android/amd64 \
+  android/arm \
+  android/arm64 \
+  darwin/amd64 \
+  darwin/arm64 \
+  dragonfly/amd64 \
+  freebsd/386 \
+  freebsd/amd64 \
+  freebsd/arm \
+  freebsd/arm64 \
+  illumos/amd64 \
+  ios/amd64 \
+  ios/arm64 \
+  js/wasm \
+  linux/386 \
+  linux/amd64 \
+  linux/arm \
+  linux/arm64 \
+  linux/loong64 \
+  linux/mips \
+  linux/mips64 \
+  linux/mips64le \
+  linux/mipsle \
+  linux/ppc64 \
+  linux/ppc64le \
+  linux/riscv64 \
+  linux/s390x \
+  netbsd/386 \
+  netbsd/amd64 \
+  netbsd/arm \
+  netbsd/arm64 \
+  openbsd/386 \
+  openbsd/amd64 \
+  openbsd/arm \
+  openbsd/arm64 \
+  openbsd/ppc64 \
+  openbsd/riscv64 \
+  plan9/386 \
+  plan9/amd64 \
+  plan9/arm \
+  solaris/amd64 \
+  wasip1/wasm \
+  windows/386 \
+  windows/amd64 \
+  windows/arm64
+
+include $(INCLUDE_DIR)/host-build.mk
+include $(INCLUDE_DIR)/package.mk
+include ../golang-version.mk
+
+$(eval $(call HostBuild))
+$(eval $(call BuildPackage,$(PKG_NAME)))
+$(eval $(call BuildPackage,$(PKG_NAME)-doc))
+$(eval $(call BuildPackage,$(PKG_NAME)-misc))
+$(eval $(call BuildPackage,$(PKG_NAME)-src))
+$(eval $(call BuildPackage,$(PKG_NAME)-tests))
+GOLANG126_EOF
+    echo "golang1.26 Makefile has been restored!"
+    cat "$GOLANG126_MAKEFILE"
+else
+    echo " "
+    echo "golang1.26 Makefile already exists, skipping."
+fi
+
+GOLANG_VERSION_MK="$PKG_PATH/../feeds/packages/lang/golang/golang-version.mk"
+
+if [ -f "$GOLANG_VERSION_MK" ]; then
+    if ! grep -q "golang1.26" "$GOLANG_VERSION_MK"; then
+        sed -i '/^GO_VERSIONED_PKGS:=/ s/$/ golang1.26/' "$GOLANG_VERSION_MK"
+        # 如果上面这行不匹配，尝试更通用的添加方式
+        # sed -i '/GO_VERSIONED_PKGS/a golang1.26' "$GOLANG_VERSION_MK"
+        echo "golang1.26 has been registered in golang-version.mk"
+    fi
+fi
+
+GOLANG_VALUES_MK="$PKG_PATH/../feeds/packages/lang/golang/golang-values.mk"
+
+if [ -f "$GOLANG_VALUES_MK" ]; then
+    # 确保 GO_VERSIONED_PKGS 变量存在并包含 golang1.26
+    if ! grep -q "GO_VERSIONED_PKGS" "$GOLANG_VALUES_MK"; then
+        echo "GO_VERSIONED_PKGS:=golang1.26" >> "$GOLANG_VALUES_MK"
+    fi
+fi
 
 update_tailscale() {
     echo " " # 处理 UPX 压缩工具依赖
@@ -292,7 +434,8 @@ FEEDS_PACKAGES="$PKG_PATH/../feeds/packages"
 TS_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$TS_FILE" ]; then
 	echo " "
-#	sed -i "/PKG_RELEASE:=/cPKG_RELEASE:=1" $TS_FILE
+    sed -i 's|PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang1.26/host|' "$TS_FILE"
+    echo " " &&echo "tailscale 已指定使用 golang1.26"
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
 	echo " " && echo "tailscale 使用1.94.2版本"	
