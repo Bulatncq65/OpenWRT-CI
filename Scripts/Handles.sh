@@ -334,6 +334,7 @@ if [ -f "$GOLANG_VERSION_MK" ]; then
         # 如果上面这行不匹配，尝试更通用的添加方式
         # sed -i '/GO_VERSIONED_PKGS/a golang1.26' "$GOLANG_VERSION_MK"
         echo "golang1.26 has been registered in golang-version.mk"
+		echo " "&& cat $GOLANG_VERSION_MK
     fi
 fi
 
