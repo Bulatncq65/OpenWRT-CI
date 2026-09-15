@@ -580,7 +580,7 @@ PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
 include $(INCLUDE_DIR)/package.mk
 
 # ---- GeoIP：使用 MetaCubeX geoip-lite.dat，并自动获取 sha256 ----
-GEOIP_VER:=$(shell date +%Y%m%d)
+GEOIP_VER:=$(shell date -u +%Y%m%d%H%M)
 GEOIP_URL:=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/
 GEOIP_URL_FILE:=geoip-lite.dat
 GEOIP_HASH:=$(shell (curl -fsSL $(GEOIP_URL)$(GEOIP_URL_FILE).sha256sum 2>/dev/null || wget -qO- $(GEOIP_URL)$(GEOIP_URL_FILE).sha256sum 2>/dev/null) | awk '{print $$1}')
@@ -593,7 +593,7 @@ define Download/geoip
 endef
 
 # ---- GeoSite：使用 MetaCubeX geosite.dat，并自动获取 sha256 ----
-GEOSITE_VER:=$(shell date +%Y%m%d)
+GEOSITE_VER:=$(shell date -u +%Y%m%d%H%M%S)
 GEOSITE_URL:=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/
 GEOSITE_URL_FILE:=geosite.dat
 GEOSITE_HASH:=$(shell (curl -fsSL $(GEOSITE_URL)$(GEOSITE_URL_FILE).sha256sum 2>/dev/null || wget -qO- $(GEOSITE_URL)$(GEOSITE_URL_FILE).sha256sum 2>/dev/null) | awk '{print $$1}')
