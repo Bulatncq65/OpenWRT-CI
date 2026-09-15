@@ -558,27 +558,18 @@ fi
 #   Iran    -> 保持原样
 # ============================================
 V2RAY_GEODATA_MAKEFILE="$(find "$PKG_PATH" "$PKG_PATH/../feeds/packages" \
-    -maxdepth 4 -type f -path '*/v2ray-geodata/Makefile' -print -quit 2>/dev/null)"
+    -maxdepth 6 -type f -path '*/v2ray-geodata/Makefile' -print -quit 2>/dev/null)"
 
 if [ -n "$V2RAY_GEODATA_MAKEFILE" ] && [ -f "$V2RAY_GEODATA_MAKEFILE" ]; then
     echo " "
     echo "Patching $V2RAY_GEODATA_MAKEFILE ..."
 
-    cat > "$V2RAY_GEODATA_MAKEFILE" << 'V2RAY_GEODATA_EOF'
-# SPDX-License-Identifier: GPL-3.0-only
-#
-# Copyright (C) 2021-2022 ImmortalWrt.org
+    if grep -q 'GEOIP_URL_FILE:=geoip-lite.dat' "$V2RAY_GEODATA_MAKEFILE"; then
+        echo "v2ray-geodata Makefile already patched, skipping."
+    else
+        V2RAY_NEW_BLOCK_TMP="$(mktemp)"
 
-include $(TOPDIR)/rules.mk
-
-PKG_NAME:=v2ray-geodata
-PKG_RELEASE:=1
-
-PKG_LICENSE_FILES:=LICENSE
-PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
-
-include $(INCLUDE_DIR)/package.mk
-
+        cat > "$V2RAY_NEW_BLOCK_TMP" << 'V2RAY_BLOCK_EOF'
 # ---- GeoIP：使用 MetaCubeX geoip-lite.dat，并自动获取 sha256 ----
 GEOIP_VER:=$(shell date -u +%Y%m%d%H%M)
 GEOIP_URL:=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/
@@ -605,90 +596,21 @@ define Download/geosite
   HASH:=$(GEOSITE_HASH)
 endef
 
-# ---- 伊朗 GeoSite 保持原样 ----
-GEOSITE_IRAN_VER:=202607270122
-GEOSITE_IRAN_FILE:=iran.dat.$(GEOSITE_IRAN_VER)
-define Download/geosite-ir
-  URL:=https://github.com/bootmortis/iran-hosted-domains/releases/download/$(GEOSITE_IRAN_VER)/
-  URL_FILE:=iran.dat
-  FILE:=$(GEOSITE_IRAN_FILE)
-  HASH:=6566f24c6349bbd4cba2f6d19e37e80b1b4138c1f8e436d407416b6f8cd13856
-endef
+V2RAY_BLOCK_EOF
 
-define Package/v2ray-geodata/template
-  SECTION:=net
-  CATEGORY:=Network
-  SUBMENU:=IP Addresses and Names
-  URL:=https://www.v2fly.org
-  PKGARCH:=all
-endef
+        # 1) 删除从 GEOIP_VER 行到 GEOSITE_IRAN_VER 行之前的所有行（保留 GEOSITE_IRAN_VER 行）
+        sed -i '/^GEOIP_VER:=/,/^GEOSITE_IRAN_VER:=/{/^GEOSITE_IRAN_VER:=/!d;}' "$V2RAY_GEODATA_MAKEFILE"
 
-define Package/v2ray-geoip
-  $(call Package/v2ray-geodata/template)
-  TITLE:=GeoIP List for V2Ray
-  PROVIDES:=@v2ray-geodata @xray-geodata @xray-geoip
-  VERSION:=$(GEOIP_VER)-r$(PKG_RELEASE)
-  LICENSE:=CC-BY-SA-4.0
-endef
+        # 2) 在 include $(INCLUDE_DIR)/package.mk 行之后插入新块
+        #    删除后，该行之后紧接着就是 GEOSITE_IRAN_VER，所以效果等于在 GEOSITE_IRAN_VER 之前插入
+        sed -i "/^include \$(INCLUDE_DIR)\/package.mk/r $V2RAY_NEW_BLOCK_TMP" "$V2RAY_GEODATA_MAKEFILE"
 
-define Package/v2ray-geosite
-  $(call Package/v2ray-geodata/template)
-  TITLE:=Geosite List for V2Ray
-  PROVIDES:=@v2ray-geodata @xray-geodata @xray-geosite
-  VERSION:=$(GEOSITE_VER)-r$(PKG_RELEASE)
-  LICENSE:=MIT
-endef
+        rm -f "$V2RAY_NEW_BLOCK_TMP"
 
-define Package/v2ray-geosite-ir
-  $(call Package/v2ray-geodata/template)
-  TITLE:=Iran Geosite List for V2Ray
-  PROVIDES:=@xray-geosite-ir
-  VERSION:=$(GEOSITE_IRAN_VER)-r$(PKG_RELEASE)
-  LICENSE:=MIT
-endef
-
-define Build/Prepare
-	$(call Build/Prepare/Default)
-ifneq ($(CONFIG_PACKAGE_v2ray-geoip),)
-	$(call Download,geoip)
-endif
-ifneq ($(CONFIG_PACKAGE_v2ray-geosite),)
-	$(call Download,geosite)
-endif
-ifneq ($(CONFIG_PACKAGE_v2ray-geosite-ir),)
-	$(call Download,geosite-ir)
-endif
-endef
-
-define Build/Compile
-endef
-
-define Package/v2ray-geoip/install
-	$(INSTALL_DIR) $(1)/usr/share/v2ray $(1)/usr/share/xray
-	$(INSTALL_DATA) $(DL_DIR)/$(GEOIP_FILE) $(1)/usr/share/v2ray/geoip.dat
-	$(LN) ../v2ray/geoip.dat $(1)/usr/share/xray/geoip.dat
-endef
-
-define Package/v2ray-geosite/install
-	$(INSTALL_DIR) $(1)/usr/share/v2ray $(1)/usr/share/xray
-	$(INSTALL_DATA) $(DL_DIR)/$(GEOSITE_FILE) $(1)/usr/share/v2ray/geosite.dat
-	$(LN) ../v2ray/geosite.dat $(1)/usr/share/xray/geosite.dat
-endef
-
-define Package/v2ray-geosite-ir/install
-	$(INSTALL_DIR) $(1)/usr/share/v2ray $(1)/usr/share/xray
-	$(INSTALL_DATA) $(DL_DIR)/$(GEOSITE_IRAN_FILE) $(1)/usr/share/v2ray/iran.dat
-	$(LN) ../v2ray/iran.dat $(1)/usr/share/xray/iran.dat
-endef
-
-$(eval $(call BuildPackage,v2ray-geoip))
-$(eval $(call BuildPackage,v2ray-geosite))
-$(eval $(call BuildPackage,v2ray-geosite-ir))
-V2RAY_GEODATA_EOF
-
-    echo "v2ray-geodata Makefile has been updated!"
-    echo "---- current content ----"
-    cat "$V2RAY_GEODATA_MAKEFILE"
+        echo "v2ray-geodata Makefile has been patched!"
+        echo "---- current content ----"
+        cat "$V2RAY_GEODATA_MAKEFILE"
+    fi
 else
     echo " "
     echo "v2ray-geodata Makefile not found, skipping."
