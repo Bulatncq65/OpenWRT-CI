@@ -208,6 +208,8 @@ fi
 # ============================================
 GOLANG126_DIR="$PKG_PATH/../feeds/packages/lang/golang/golang1.26"
 GOLANG126_MAKEFILE="$GOLANG126_DIR/Makefile"
+GOLANG126_TEST="$GOLANG126_DIR/test.sh"
+GOLANG126_TEST_VERSION="$GOLANG126_DIR/test-version.sh"
 
 if [ ! -f "$GOLANG126_MAKEFILE" ]; then
     echo " "
@@ -319,33 +321,65 @@ $(eval $(call BuildPackage,$(PKG_NAME)-misc))
 $(eval $(call BuildPackage,$(PKG_NAME)-src))
 $(eval $(call BuildPackage,$(PKG_NAME)-tests))
 GOLANG126_EOF
-    echo "golang1.26 Makefile has been restored!"
-    cat "$GOLANG126_MAKEFILE"
+   echo " " && echo "golang1.26 Makefile has been restored!" && cat "$GOLANG126_MAKEFILE"
+ cat > "$GOLANG126_TEST" << 'GOLANG126_EOF'
+#!/bin/sh
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+case "$1" in
+	golang*doc|golang*misc|golang*src|golang*tests) exit ;;
+esac
+
+cat <<'EOF' > hello.go
+package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello, World!")
+}
+
+EOF
+
+go run hello.go
+rm hello.go
+GOLANG126_EOF
+ echo " " && echo "golang126_test has been restored!" && cat "$GOLANG126_TEST"
+ 
+ cat > "$GOLANG126_TEST_VERSION" << 'GOLANG126_EOF'
+#!/bin/sh
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+# shellcheck shell=busybox
+
+case "$PKG_NAME" in
+golang?.??-doc|\
+golang?.??-misc|\
+golang?.??-src|\
+golang?.??-tests)
+	exit 0
+	;;
+
+golang?.??)
+	go version | grep -F " go$PKG_VERSION "
+	;;
+
+*)
+	echo "Untested package: $PKG_NAME" >&2
+	exit 1
+	;;
+esac
+GOLANG126_EOF
+
+  echo " " && echo "golang126_test_version has been restored!" && cat "$GOLANG126_TEST_VERSION"
+    
 else
     echo " "
     echo "golang1.26 Makefile already exists, skipping."
 fi
 
-GOLANG_VERSION_MK="$PKG_PATH/../feeds/packages/lang/golang/golang-version.mk"
-
-if [ -f "$GOLANG_VERSION_MK" ]; then
-    if ! grep -q "golang1.26" "$GOLANG_VERSION_MK"; then
-        sed -i '/^GO_VERSIONED_PKGS:=/ s/$/ golang1.26/' "$GOLANG_VERSION_MK"
-        # 如果上面这行不匹配，尝试更通用的添加方式
-        # sed -i '/GO_VERSIONED_PKGS/a golang1.26' "$GOLANG_VERSION_MK"
-        echo "golang1.26 has been registered in golang-version.mk"
-		echo " "&& cat $GOLANG_VERSION_MK
-    fi
-fi
-
-GOLANG_VALUES_MK="$PKG_PATH/../feeds/packages/lang/golang/golang-values.mk"
-
-if [ -f "$GOLANG_VALUES_MK" ]; then
-    # 确保 GO_VERSIONED_PKGS 变量存在并包含 golang1.26
-    if ! grep -q "GO_VERSIONED_PKGS" "$GOLANG_VALUES_MK"; then
-        echo "GO_VERSIONED_PKGS:=golang1.26" >> "$GOLANG_VALUES_MK"
-    fi
-fi
 
 update_tailscale() {
     echo " " # 处理 UPX 压缩工具依赖
@@ -435,11 +469,11 @@ FEEDS_PACKAGES="$PKG_PATH/../feeds/packages"
 TS_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$TS_FILE" ]; then
 	echo " "
-    sed -i 's|PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang1.26/host|' "$TS_FILE"
-    echo " " &&echo "tailscale 已指定使用 golang1.26"
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=1.94.2" $TS_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=c45975beb4cb7bab8047cfba77ec8b170570d184f3c806258844f3e49c60d7aa" $TS_FILE
 	echo " " && echo "tailscale 使用1.94.2版本"	
+    sed -i 's|PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang1.26/host|' "$TS_FILE"
+    echo " " &&echo "tailscale 已指定使用 golang1.26"
 	if sed -i '/\/files/d' "$TS_FILE"; then
 		echo "tailscale has been fixed!"
 	    cat $TS_FILE
