@@ -380,6 +380,62 @@ else
     echo "golang1.26 Makefile already exists, skipping."
 fi
 
+# ============================================
+# 修改 package/luci-app-nikki/Makefile：
+#   在 LUCI_DEPENDS 行后插入 postinst/postrm 钩子，
+#   安装/卸载时自动为 mihomo(nikki) 创建/清理软链接：
+#     /etc/nikki/run/GeoSite.dat -> /usr/share/v2ray/geosite.dat
+#     /etc/nikki/run/GeoIP.dat   -> /usr/share/v2ray/geoip.dat
+# ============================================
+NIKKI_MAKEFILE="$(find "$PKG_PATH" -maxdepth 4 -type f -path '*/luci-app-nikki/Makefile' -print -quit 2>/dev/null)"
+
+if [ -n "$NIKKI_MAKEFILE" ] && [ -f "$NIKKI_MAKEFILE" ]; then
+    echo " "
+    echo "Patching $NIKKI_MAKEFILE ..."
+
+    if grep -q 'Package/luci-app-nikki/postinst' "$NIKKI_MAKEFILE"; then
+        echo "luci-app-nikki Makefile already has postinst hook, skipping."
+    else
+        NIKKI_HOOK_TMP="$(mktemp)"
+
+        cat > "$NIKKI_HOOK_TMP" << 'NIKKI_HOOK_EOF'
+define Package/luci-app-nikki/postinst
+#!/bin/sh
+[ -f "$${IPKG_INSTROOT}/usr/share/v2ray/geosite.dat" ] && {
+	mkdir -p "$${IPKG_INSTROOT}/etc/nikki/run"
+	ln -sf /usr/share/v2ray/geosite.dat "$${IPKG_INSTROOT}/etc/nikki/run/GeoSite.dat"
+}
+[ -f "$${IPKG_INSTROOT}/usr/share/v2ray/geoip.dat" ] && {
+	mkdir -p "$${IPKG_INSTROOT}/etc/nikki/run"
+	ln -sf /usr/share/v2ray/geoip.dat "$${IPKG_INSTROOT}/etc/nikki/run/GeoIP.dat"
+}
+exit 0
+endef
+
+define Package/luci-app-nikki/postrm
+#!/bin/sh
+[ -L "$${IPKG_INSTROOT}/etc/nikki/run/GeoSite.dat" ] && rm -f "$${IPKG_INSTROOT}/etc/nikki/run/GeoSite.dat"
+[ -L "$${IPKG_INSTROOT}/etc/nikki/run/GeoIP.dat" ] && rm -f "$${IPKG_INSTROOT}/etc/nikki/run/GeoIP.dat"
+exit 0
+endef
+
+NIKKI_HOOK_EOF
+
+        # 在 LUCI_DEPENDS 行之后追加钩子内容（r 命令会追加到匹配行后面）
+        if sed -i "/^LUCI_DEPENDS:=/r $NIKKI_HOOK_TMP" "$NIKKI_MAKEFILE"; then
+            echo "luci-app-nikki Makefile has been patched!"
+            echo "---- current content ----"
+            cat "$NIKKI_MAKEFILE"
+        else
+            echo "luci-app-nikki patch failed; continuing!"
+        fi
+
+        rm -f "$NIKKI_HOOK_TMP"
+    fi
+else
+    echo " "
+    echo "luci-app-nikki Makefile not found, skipping."
+fi
 
 update_tailscale() {
     echo " " # 处理 UPX 压缩工具依赖
@@ -482,6 +538,7 @@ if [ -f "$TS_FILE" ]; then
 	fi
 fi
 
+
 #修复Rust编译失败
 RUST_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/rust/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$RUST_FILE" ]; then
@@ -492,4 +549,147 @@ if [ -f "$RUST_FILE" ]; then
 	else
 		echo "rust fix failed; continuing!"
 	fi
+fi
+
+# ============================================
+# 修改 net/v2ray-geodata/Makefile：
+#   GeoIP   -> MetaCubeX geoip-lite.dat（自动获取 sha256）
+#   GeoSite -> MetaCubeX geosite.dat    （自动获取 sha256）
+#   Iran    -> 保持原样
+# ============================================
+V2RAY_GEODATA_MAKEFILE="$(find "$PKG_PATH" "$PKG_PATH/../feeds/packages" \
+    -maxdepth 4 -type f -path '*/v2ray-geodata/Makefile' -print -quit 2>/dev/null)"
+
+if [ -n "$V2RAY_GEODATA_MAKEFILE" ] && [ -f "$V2RAY_GEODATA_MAKEFILE" ]; then
+    echo " "
+    echo "Patching $V2RAY_GEODATA_MAKEFILE ..."
+
+    cat > "$V2RAY_GEODATA_MAKEFILE" << 'V2RAY_GEODATA_EOF'
+# SPDX-License-Identifier: GPL-3.0-only
+#
+# Copyright (C) 2021-2022 ImmortalWrt.org
+
+include $(TOPDIR)/rules.mk
+
+PKG_NAME:=v2ray-geodata
+PKG_RELEASE:=1
+
+PKG_LICENSE_FILES:=LICENSE
+PKG_MAINTAINER:=Tianling Shen <cnsztl@immortalwrt.org>
+
+include $(INCLUDE_DIR)/package.mk
+
+# ---- GeoIP：使用 MetaCubeX geoip-lite.dat，并自动获取 sha256 ----
+GEOIP_VER:=$(shell date +%Y%m%d)
+GEOIP_URL:=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/
+GEOIP_URL_FILE:=geoip-lite.dat
+GEOIP_HASH:=$(shell (curl -fsSL $(GEOIP_URL)$(GEOIP_URL_FILE).sha256sum 2>/dev/null || wget -qO- $(GEOIP_URL)$(GEOIP_URL_FILE).sha256sum 2>/dev/null) | awk '{print $$1}')
+GEOIP_FILE:=geoip-lite.dat.$(GEOIP_VER).$(GEOIP_HASH)
+define Download/geoip
+  URL:=$(GEOIP_URL)
+  URL_FILE:=$(GEOIP_URL_FILE)
+  FILE:=$(GEOIP_FILE)
+  HASH:=$(GEOIP_HASH)
+endef
+
+# ---- GeoSite：使用 MetaCubeX geosite.dat，并自动获取 sha256 ----
+GEOSITE_VER:=$(shell date +%Y%m%d)
+GEOSITE_URL:=https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/
+GEOSITE_URL_FILE:=geosite.dat
+GEOSITE_HASH:=$(shell (curl -fsSL $(GEOSITE_URL)$(GEOSITE_URL_FILE).sha256sum 2>/dev/null || wget -qO- $(GEOSITE_URL)$(GEOSITE_URL_FILE).sha256sum 2>/dev/null) | awk '{print $$1}')
+GEOSITE_FILE:=geosite.dat.$(GEOSITE_VER).$(GEOSITE_HASH)
+define Download/geosite
+  URL:=$(GEOSITE_URL)
+  URL_FILE:=$(GEOSITE_URL_FILE)
+  FILE:=$(GEOSITE_FILE)
+  HASH:=$(GEOSITE_HASH)
+endef
+
+# ---- 伊朗 GeoSite 保持原样 ----
+GEOSITE_IRAN_VER:=202607270122
+GEOSITE_IRAN_FILE:=iran.dat.$(GEOSITE_IRAN_VER)
+define Download/geosite-ir
+  URL:=https://github.com/bootmortis/iran-hosted-domains/releases/download/$(GEOSITE_IRAN_VER)/
+  URL_FILE:=iran.dat
+  FILE:=$(GEOSITE_IRAN_FILE)
+  HASH:=6566f24c6349bbd4cba2f6d19e37e80b1b4138c1f8e436d407416b6f8cd13856
+endef
+
+define Package/v2ray-geodata/template
+  SECTION:=net
+  CATEGORY:=Network
+  SUBMENU:=IP Addresses and Names
+  URL:=https://www.v2fly.org
+  PKGARCH:=all
+endef
+
+define Package/v2ray-geoip
+  $(call Package/v2ray-geodata/template)
+  TITLE:=GeoIP List for V2Ray
+  PROVIDES:=@v2ray-geodata @xray-geodata @xray-geoip
+  VERSION:=$(GEOIP_VER)-r$(PKG_RELEASE)
+  LICENSE:=CC-BY-SA-4.0
+endef
+
+define Package/v2ray-geosite
+  $(call Package/v2ray-geodata/template)
+  TITLE:=Geosite List for V2Ray
+  PROVIDES:=@v2ray-geodata @xray-geodata @xray-geosite
+  VERSION:=$(GEOSITE_VER)-r$(PKG_RELEASE)
+  LICENSE:=MIT
+endef
+
+define Package/v2ray-geosite-ir
+  $(call Package/v2ray-geodata/template)
+  TITLE:=Iran Geosite List for V2Ray
+  PROVIDES:=@xray-geosite-ir
+  VERSION:=$(GEOSITE_IRAN_VER)-r$(PKG_RELEASE)
+  LICENSE:=MIT
+endef
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+ifneq ($(CONFIG_PACKAGE_v2ray-geoip),)
+	$(call Download,geoip)
+endif
+ifneq ($(CONFIG_PACKAGE_v2ray-geosite),)
+	$(call Download,geosite)
+endif
+ifneq ($(CONFIG_PACKAGE_v2ray-geosite-ir),)
+	$(call Download,geosite-ir)
+endif
+endef
+
+define Build/Compile
+endef
+
+define Package/v2ray-geoip/install
+	$(INSTALL_DIR) $(1)/usr/share/v2ray $(1)/usr/share/xray
+	$(INSTALL_DATA) $(DL_DIR)/$(GEOIP_FILE) $(1)/usr/share/v2ray/geoip.dat
+	$(LN) ../v2ray/geoip.dat $(1)/usr/share/xray/geoip.dat
+endef
+
+define Package/v2ray-geosite/install
+	$(INSTALL_DIR) $(1)/usr/share/v2ray $(1)/usr/share/xray
+	$(INSTALL_DATA) $(DL_DIR)/$(GEOSITE_FILE) $(1)/usr/share/v2ray/geosite.dat
+	$(LN) ../v2ray/geosite.dat $(1)/usr/share/xray/geosite.dat
+endef
+
+define Package/v2ray-geosite-ir/install
+	$(INSTALL_DIR) $(1)/usr/share/v2ray $(1)/usr/share/xray
+	$(INSTALL_DATA) $(DL_DIR)/$(GEOSITE_IRAN_FILE) $(1)/usr/share/v2ray/iran.dat
+	$(LN) ../v2ray/iran.dat $(1)/usr/share/xray/iran.dat
+endef
+
+$(eval $(call BuildPackage,v2ray-geoip))
+$(eval $(call BuildPackage,v2ray-geosite))
+$(eval $(call BuildPackage,v2ray-geosite-ir))
+V2RAY_GEODATA_EOF
+
+    echo "v2ray-geodata Makefile has been updated!"
+    echo "---- current content ----"
+    cat "$V2RAY_GEODATA_MAKEFILE"
+else
+    echo " "
+    echo "v2ray-geodata Makefile not found, skipping."
 fi
