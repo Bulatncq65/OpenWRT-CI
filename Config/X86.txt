@@ -59,6 +59,7 @@ CONFIG_PACKAGE_luci-app-usb-printer=y
 CONFIG_PACKAGE_luci-app-bandix=y
 
 CONFIG_PACKAGE_luci-app-lucky=y
+CONFIG_PACKAGE_luci-app-dockerman=y
 
 
 # dead支持
@@ -77,4 +78,3 @@ CONFIG_PACKAGE_luci-app-lucky=y
 
 #CONFIG_PACKAGE_kmod-xdp-sockets-diag=y
 #CONFIG_PACKAGE_kmod-sched-bpf=y
-
