@@ -4,6 +4,108 @@
 
 PKG_PATH="$GITHUB_WORKSPACE/wrt/package"
 
+STAGING_DIR_HOST="${GITHUB_WORKSPACE}/wrt/staging_dir/host"
+
+# ---------- 确保 UPX 主机工具可用 ----------
+ensure_upx() {
+    local upx_bin="$STAGING_DIR_HOST/bin/upx"
+
+    if [ -x "$upx_bin" ]; then
+        echo "✔ UPX 已就绪: $upx_bin"
+        return 0
+    fi
+
+    echo "正在准备 UPX 主机工具..."
+
+    # 优先尝试系统安装
+    if command -v upx &>/dev/null; then
+        mkdir -p "$STAGING_DIR_HOST/bin"
+        ln -sf "$(command -v upx)" "$upx_bin"
+        echo "✔ 已链接系统 UPX: $(command -v upx) -> $upx_bin"
+        return 0
+    fi
+
+    # 系统没有，从源码构建
+    local upx_src="$GITHUB_WORKSPACE/wrt/package/openwrt-upx"
+    if [ ! -d "$upx_src/upx" ]; then
+        echo "正在克隆 openwrt-upx..."
+        git clone --depth 1 https://github.com/selfcan/openwrt-upx.git "$upx_src" || {
+            echo "❌ 克隆 openwrt-upx 失败" >&2
+            return 1
+        }
+    fi
+
+    echo "正在编译 upx/host ..."
+    (cd "$GITHUB_WORKSPACE/wrt" && make package/upx/host/compile V=s) || {
+        echo "❌ 编译 upx/host 失败" >&2
+        return 1
+    }
+
+    if [ -x "$upx_bin" ]; then
+        echo "✔ UPX 编译完成: $upx_bin"
+        return 0
+    else
+        echo "❌ UPX 编译后仍未找到可执行文件" >&2
+        return 1
+    fi
+}
+
+# ---------- 向 Makefile 的 install 段注入 UPX 压缩（含架构判断）----------
+add_upx_compress() {
+    local makefile="$1"
+    local binary="$2"
+    local install_dir="${3:-usr/sbin}"
+
+    if [ ! -f "$makefile" ]; then
+        echo "❌ Makefile 不存在: $makefile" >&2
+        return 1
+    fi
+
+    # 确保 UPX 可用
+    ensure_upx || return 1
+
+    # 避免重复注入
+    if grep -q "UPX compressing ${binary}" "$makefile" 2>/dev/null; then
+        echo "ℹ UPX 压缩已存在于: $makefile ($binary)"
+        return 0
+    fi
+
+    # 确认存在 install 段
+    if ! grep -q "^define Package/.*/install" "$makefile"; then
+        echo "⚠ $makefile 中没有找到 define Package/.../install 段，跳过 $binary" >&2
+        return 1
+    fi
+
+    # 生成要插入的 Makefile 代码块（注意：每行前要有 Tab 缩进）
+    local tmp_insert
+    tmp_insert=$(mktemp)
+    cat > "$tmp_insert" << EOF
+	if echo "\$(ARCH)" | grep -qE '^(mips64|riscv64|loongarch64)'; then \\
+		echo "==> UPX skipped for \$(ARCH)"; \\
+	elif [ -x "\$(STAGING_DIR_HOST)/bin/upx" ]; then \\
+		echo "==> UPX compressing ${binary} (\$(ARCH))"; \\
+		\$(STAGING_DIR_HOST)/bin/upx --best --lzma \$(1)/${install_dir}/${binary} 2>/dev/null || true; \\
+	else \\
+		echo "==> UPX not found, skipping compression for ${binary}"; \\
+	fi
+EOF
+
+    # 在 install 段的 endef 之前插入临时文件内容
+    sed -i "/^define Package\/.*\/install/,/^endef/ {
+        /^endef/ r $tmp_insert
+    }" "$makefile"
+
+    rm -f "$tmp_insert"
+
+    if grep -q "UPX compressing ${binary}" "$makefile"; then
+        echo "✔ 已为 $binary 注入 UPX 压缩（含架构判断）: $makefile"
+        return 0
+    else
+        echo "❌ 注入 UPX 压缩失败: $makefile" >&2
+        return 1
+    fi
+}
+
 #预置HomeProxy数据，隔离临时变量和清理信号，避免影响后续修复
 hp_preset_resources() (
 	local HP_DIR="$1"
@@ -450,90 +552,6 @@ else
     echo "luci-app-nikki Makefile not found, skipping."
 fi
 
-update_tailscale() {
-    echo " " # 处理 UPX 压缩工具依赖
-    echo "正在检查并配置 UPX 压缩工具依赖..."
-  # local upx_dir="$PKG_PATH"upx
-    local upx_dir="$GITHUB_WORKSPACE/wrt/upx"
-    local upx_path="$upx_dir/upx"
-
-    if [ ! -x "$upx_path" ]; then
-        mkdir -p "$upx_dir"
-        
-        # 检查系统全局是否已经安装了 upx
-        if ! command -v upx &> /dev/null; then
-            echo "系统未安装 upx, 正在尝试通过 apt-get 自动安装..."
-            # 这里的 || true 是为了防止网络卡顿时 update 报错导致整个脚本退出
-            sudo apt-get update -y || true
-            sudo apt-get install -y upx-ucl
-        fi
-        
-        # 找到系统 upx 的绝对路径，并建立 Makefile 需要的软链接
-        local sys_upx=$(command -v upx)
-        if [ -n "$sys_upx" ]; then
-            ln -sf "$sys_upx" "$upx_path"
-            echo "✔ 成功创建 UPX 软链接: $sys_upx -> $upx_path"
-        else
-            echo "❌ 警告: UPX 安装失败或未找到，稍后的编译可能仍然会报错！" >&2
-        fi
-    else
-        echo "✔ UPX 工具已就绪 ($upx_path)"
-    fi
-
-    # 使用GuNanOvO/openwrt-tailscale的tailscale 
-    local repo_url="https://github.com/Bulatncq65/openwrt-tailscale.git"
-    # tailscale 路径
-    local target_dir="$GITHUB_WORKSPACE/wrt/feeds/packages/net/tailscale" 
-    # 源码在大仓库里的实际相对路径
-    local sub_dir="package/tailscale"
-    # 设置一个临时克隆目录
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-
-    # 1. 如果存在旧的，先删掉
-    if [ -d "$target_dir" ]; then
-        echo "正在从 $target_dir 删除旧的 tailscale..."
-        rm -rf "$target_dir"
-    fi
-
-    echo "正在使用稀疏克隆(sparse-checkout)拉取最新版 tailscale..."
-    
-    # 初始化并拉取仓库的骨架（不下载具体文件，极速）
-    rm -rf "$tmp_dir"
-    if ! git clone --depth 1 --filter=blob:none --sparse "$repo_url" "$tmp_dir"; then
-        echo "错误：从 $repo_url 拉取仓库骨架失败" >&2
-        exit 1
-    fi
-
-    # 告诉 Git 我们只需要 package/tailscale 这一个文件夹
-    git -C "$tmp_dir" sparse-checkout set "$sub_dir"
-
-    # 将下载好的子文件夹移动到我们真正需要的目标路径
-    mv "$tmp_dir/$sub_dir" "$target_dir"
-    # 修改 Makefile（删除包含 /builder 的行）
-    sed -i 's|$(TOPDIR)/upx/upx|upx|g' "$target_dir/Makefile"   # ← 新增这一行
-    #if ! sed -i '/\/builder/d' "$target_dir/Makefile"; then
-    #    echo "错误：修改 Makefile 失败" >&2
-    #    exit 1
-    #fi
-    # 清除临时文件夹的残留
-    rm -rf "$tmp_dir"
-    
-    echo "使用GuNanOvO/openwrt-tailscale的tailscale！" 
-}
-
-#update_tailscale
-
-Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
-if [ -f "$Xray_FILE" ]; then
-	echo " "
-	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
-	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
-
-	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
-
-fi
-
 #修复TailScale配置文件冲突
 FEEDS_PACKAGES="$PKG_PATH/../feeds/packages"
 TS_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
@@ -554,8 +572,27 @@ if [ -f "$TS_FILE" ]; then
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
+	add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
 fi
 
+Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
+if [ -f "$Xray_FILE" ]; then
+	echo " "
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
+
+	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
+    add_upx_compress "$XRAY_FILE" "xray" "usr/bin"
+fi
+
+#压缩sing-box
+SING_BOX_FILE=$(find "$PKG_PATH" -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
+if [ -f "$SING_BOX_FILE" ]; then
+	echo " "
+    add_upx_compress "$SING_BOX_FILE" "sing-box" "usr/bin"
+	echo "sing-box 将被压缩"
+	echo " "
+fi
 
 #修复Rust编译失败
 RUST_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename '*/rust/Makefile' -print -quit 2>/dev/null)"
