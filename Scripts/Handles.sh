@@ -214,7 +214,6 @@ GOLANG126_TEST_VERSION="$GOLANG126_DIR/test-version.sh"
 if [ ! -f "$GOLANG126_MAKEFILE" ]; then
     echo " "
     echo "golang1.26 Makefile not found, restoring..."
-	echo " "
     mkdir -p "$GOLANG126_DIR"
     cat > "$GOLANG126_MAKEFILE" << 'GOLANG126_EOF'
 #
@@ -322,7 +321,7 @@ $(eval $(call BuildPackage,$(PKG_NAME)-misc))
 $(eval $(call BuildPackage,$(PKG_NAME)-src))
 $(eval $(call BuildPackage,$(PKG_NAME)-tests))
 GOLANG126_EOF
-   echo " " && echo "golang1.26 Makefile has been restored!" 
+   echo "golang1.26 Makefile has been restored!" 
    echo " " 
    echo "---- current srart ----"&& cat "$GOLANG126_MAKEFILE"
    echo "---- current end ----"
@@ -355,7 +354,6 @@ GOLANG126_EOF
  echo "---- current start ----"
  echo " " && cat "$GOLANG126_TEST"
  echo "---- current end ----"
- echo " "  
 
  cat > "$GOLANG126_TEST_VERSION" << 'GOLANG126_EOF'
 #!/bin/sh
@@ -531,9 +529,9 @@ if [ -f "$Xray_FILE" ]; then
 	echo " "
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
-    echo "---- current start ----"
+
 	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
-	echo "---- current end ----"
+
 fi
 
 #修复TailScale配置文件冲突
