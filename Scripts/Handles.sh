@@ -563,6 +563,7 @@ if [ -f "$TS_FILE" ]; then
     sed -i 's|PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang1.26/host|' "$TS_FILE"
     echo " " &&echo "tailscale 已指定使用 golang1.26"
 	if sed -i '/\/files/d' "$TS_FILE"; then
+	add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
 		echo " "
 		echo "tailscale has been fixed!"
 		echo " "
@@ -572,7 +573,6 @@ if [ -f "$TS_FILE" ]; then
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
-	add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
 fi
 
 Xray_FILE=$(find ../feeds/packages/ -maxdepth 3 -type f -wholename "*/xray-core/Makefile")
@@ -583,6 +583,11 @@ if [ -f "$Xray_FILE" ]; then
 
 	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
     add_upx_compress "$XRAY_FILE" "xray" "usr/bin"
+    echo " "
+    echo "---- current start ----"
+    cat $Xray_FILE
+    echo "---- current end ----"
+	echo " "
 fi
 
 #压缩sing-box
@@ -591,6 +596,10 @@ if [ -f "$SING_BOX_FILE" ]; then
 	echo " "
     add_upx_compress "$SING_BOX_FILE" "sing-box" "usr/bin"
 	echo "sing-box 将被压缩"
+    echo " "
+    echo "---- current start ----"
+    cat $SING_BOX_FILE
+    echo "---- current end ----"
 	echo " "
 fi
 
