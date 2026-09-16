@@ -323,8 +323,8 @@ $(eval $(call BuildPackage,$(PKG_NAME)-src))
 $(eval $(call BuildPackage,$(PKG_NAME)-tests))
 GOLANG126_EOF
    echo " " && echo "golang1.26 Makefile has been restored!" 
-   echo "---- current srart ----"
-   echo " " && cat "$GOLANG126_MAKEFILE"
+   echo " " 
+   echo "---- current srart ----"&& cat "$GOLANG126_MAKEFILE"
    echo "---- current end ----"
  cat > "$GOLANG126_TEST" << 'GOLANG126_EOF'
 #!/bin/sh
@@ -354,7 +354,7 @@ GOLANG126_EOF
  echo " "  
  echo "---- current start ----"
  echo " " && cat "$GOLANG126_TEST"
- echo "---- current ende ----"
+ echo "---- current end ----"
  echo " "  
 
  cat > "$GOLANG126_TEST_VERSION" << 'GOLANG126_EOF'
@@ -386,7 +386,7 @@ GOLANG126_EOF
   echo " " && echo "golang126_test_version has been restored!" 
   echo " "  
   echo "---- current start ----"&&  cat "$GOLANG126_TEST_VERSION"
-  echo "---- current ende ----"
+  echo "---- current end ----"
 else
     echo " "
     echo "golang1.26 Makefile already exists, skipping."
@@ -439,7 +439,8 @@ NIKKI_HOOK_EOF
 			echo " "
             echo "---- current start ----"
             cat "$NIKKI_MAKEFILE"
-            echo "---- current ende ----"
+            echo " "  
+            echo "---- current end ----"
         else
             echo "luci-app-nikki patch failed; continuing!"
         fi
@@ -551,7 +552,6 @@ if [ -f "$TS_FILE" ]; then
 		echo " "
 		echo "---- current start ----"
 	    cat $TS_FILE
-        cat "$V2RAY_GEODATA_MAKEFILE"
         echo "---- current end ----"
 	else
 		echo "tailscale fix failed; continuing!"
