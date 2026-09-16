@@ -214,6 +214,7 @@ GOLANG126_TEST_VERSION="$GOLANG126_DIR/test-version.sh"
 if [ ! -f "$GOLANG126_MAKEFILE" ]; then
     echo " "
     echo "golang1.26 Makefile not found, restoring..."
+	echo " "
     mkdir -p "$GOLANG126_DIR"
     cat > "$GOLANG126_MAKEFILE" << 'GOLANG126_EOF'
 #
@@ -321,7 +322,10 @@ $(eval $(call BuildPackage,$(PKG_NAME)-misc))
 $(eval $(call BuildPackage,$(PKG_NAME)-src))
 $(eval $(call BuildPackage,$(PKG_NAME)-tests))
 GOLANG126_EOF
-   echo " " && echo "golang1.26 Makefile has been restored!" && cat "$GOLANG126_MAKEFILE"
+   echo " " && echo "golang1.26 Makefile has been restored!" 
+   echo "---- current srart ----"
+   echo " " && cat "$GOLANG126_MAKEFILE"
+   echo "---- current end ----"
  cat > "$GOLANG126_TEST" << 'GOLANG126_EOF'
 #!/bin/sh
 #
@@ -345,8 +349,14 @@ EOF
 go run hello.go
 rm hello.go
 GOLANG126_EOF
- echo " " && echo "golang126_test has been restored!" && cat "$GOLANG126_TEST"
- 
+
+ echo " " && echo "golang126_test has been restored!"
+ echo " "  
+ echo "---- current start ----"
+ echo " " && cat "$GOLANG126_TEST"
+ echo "---- current ende ----"
+ echo " "  
+
  cat > "$GOLANG126_TEST_VERSION" << 'GOLANG126_EOF'
 #!/bin/sh
 #
@@ -373,8 +383,10 @@ golang?.??)
 esac
 GOLANG126_EOF
 
-  echo " " && echo "golang126_test_version has been restored!" && cat "$GOLANG126_TEST_VERSION"
-    
+  echo " " && echo "golang126_test_version has been restored!" 
+  echo " "  
+  echo "---- current start ----"&&  cat "$GOLANG126_TEST_VERSION"
+  echo "---- current ende ----"
 else
     echo " "
     echo "golang1.26 Makefile already exists, skipping."
@@ -424,8 +436,10 @@ NIKKI_HOOK_EOF
         # 在 LUCI_DEPENDS 行之后追加钩子内容（r 命令会追加到匹配行后面）
         if sed -i "/^LUCI_DEPENDS:=/r $NIKKI_HOOK_TMP" "$NIKKI_MAKEFILE"; then
             echo "luci-app-nikki Makefile has been patched!"
-            echo "---- current content ----"
+			echo " "
+            echo "---- current start ----"
             cat "$NIKKI_MAKEFILE"
+            echo "---- current ende ----"
         else
             echo "luci-app-nikki patch failed; continuing!"
         fi
@@ -516,8 +530,9 @@ if [ -f "$Xray_FILE" ]; then
 	echo " "
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
-
+    echo "---- current start ----"
 	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
+	echo "---- current end ----"
 fi
 
 #修复TailScale配置文件冲突
@@ -531,8 +546,13 @@ if [ -f "$TS_FILE" ]; then
     sed -i 's|PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang1.26/host|' "$TS_FILE"
     echo " " &&echo "tailscale 已指定使用 golang1.26"
 	if sed -i '/\/files/d' "$TS_FILE"; then
+		echo " "
 		echo "tailscale has been fixed!"
+		echo " "
+		echo "---- current start ----"
 	    cat $TS_FILE
+        cat "$V2RAY_GEODATA_MAKEFILE"
+        echo "---- current end ----"
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
@@ -608,8 +628,10 @@ V2RAY_BLOCK_EOF
         rm -f "$V2RAY_NEW_BLOCK_TMP"
 
         echo "v2ray-geodata Makefile has been patched!"
-        echo "---- current content ----"
+        echo "   "
+		echo "---- current start ----"
         cat "$V2RAY_GEODATA_MAKEFILE"
+        echo "---- current end ----"
     fi
 else
     echo " "
