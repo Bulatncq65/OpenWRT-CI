@@ -6,8 +6,8 @@ CONFIG_TARGET_qualcommax_ipq60xx=y
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cmiot_ax18=y
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=y
 
-CONFIG_TARGET_DEVICE_PACKAGES_qualcommax_ipq60xx_DEVICE_cmiot_ax18="ipq-wifi-cmiot_ax18 -kmod-ath11k-pci"
-CONFIG_TARGET_DEVICE_PACKAGES_qualcommax_ipq60xx_DEVICE_zn_m2="ipq-wifi-zn_m2 -kmod-ath11k-pci"
+CONFIG_TARGET_DEVICE_PACKAGES_qualcommax_ipq60xx_DEVICE_cmiot_ax18="ipq-wifi-cmiot_ax18"
+CONFIG_TARGET_DEVICE_PACKAGES_qualcommax_ipq60xx_DEVICE_zn_m2="ipq-wifi-zn_m2"
 
 
 CONFIG_TARGET_SQUASHFS_BLOCK_SIZE=1024
