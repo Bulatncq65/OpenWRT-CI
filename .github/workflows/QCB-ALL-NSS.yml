@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       PACKAGE:
-        description: '手动调整插件包，多个请用\n符号隔开。'
+        description: '手动调整插件包，多个请用\n符号隔开，内容按 .config 行格式填写（如 CONFIG_PACKAGE_xxx=y）。留空使用默认列表。'
         required: false
         type: string
       TEST:
@@ -63,6 +63,6 @@ jobs:
       #源码名称
       WRT_SOURCE: ${{matrix.SOURCE}}
       #插件调整
-      WRT_PACKAGE: ${{inputs.PACKAGE}}
+      WRT_PACKAGE: ${{ inputs.PACKAGE || 'CONFIG_PACKAGE_kmod-sched-bpf=n' }}
       #仅输出配置文件
       WRT_TEST: ${{inputs.TEST || false}}
