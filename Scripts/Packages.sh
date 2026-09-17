@@ -89,7 +89,7 @@ UPDATE_PACKAGE "luci-app-bandix" "timsaya/luci-app-bandix" "main"
 UPDATE_PACKAGE "luci-app-lucky" "gdy666/luci-app-lucky" "main"
 UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
 
-#UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main"
+UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main"
 
 #UPDATE_PACKAGE "mwan3" "dl12345/mwan3" "openwrt-25.12"
 #UPDATE_PACKAGE "luci-app-mwan3" "dl12345/luci-app-mwan3" "openwrt-25.12"
