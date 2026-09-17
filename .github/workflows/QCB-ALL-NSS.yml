@@ -63,6 +63,6 @@ jobs:
       #源码名称
       WRT_SOURCE: ${{matrix.SOURCE}}
       #插件调整
-      WRT_PACKAGE: ${{ inputs.PACKAGE || 'CONFIG_PACKAGE_kmod-sched-bpf=n\nCONFIG_PACKAGE_vmlinux-btf=n\nCONFIG_PACKAGE_dae=n\CONFIG_PACKAGE_daed=n\nCONFIG_PACKAGE_luci-app-daede=n' }}
+      WRT_PACKAGE: ${{ inputs.PACKAGE || 'CONFIG_PACKAGE_kmod-sched-bpf=n\nCONFIG_PACKAGE_vmlinux-btf=n\nCONFIG_PACKAGE_dae=n\CONFIG_PACKAGE_daed=n\nCONFIG_PACKAGE_luci-app-dae=n\nCONFIG_PACKAGE_luci-app-daed=n\nCONFIG_PACKAGE_luci-app-daede=n' }}
       #仅输出配置文件
       WRT_TEST: ${{inputs.TEST || false}}
