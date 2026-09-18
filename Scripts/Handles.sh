@@ -396,90 +396,113 @@ fi
 # ============================================
 STAGING_DIR_HOST="${GITHUB_WORKSPACE}/wrt/staging_dir/host"
 
-# ---------- 确保 UPX 主机工具可用 ----------
-ensure_upx() {
-    local upx_bin="$STAGING_DIR_HOST/bin/upx"
-
-    if [ -x "$upx_bin" ]; then
-        echo "✔ UPX 已就绪: $upx_bin"
+# ============================================
+# 确保 upx 包源存在于构建系统中
+# 优先通过 feeds 添加，失败则直接克隆到 package 目录
+# ============================================
+ensure_upx_source() {
+    # 如果 upx/host 已经编译过，直接返回
+    if [ -x "$STAGING_DIR_HOST/bin/upx" ]; then
+        echo "✔ UPX 已就绪: $STAGING_DIR_HOST/bin/upx"
         return 0
     fi
 
-    echo "正在准备 UPX 主机工具..."
+    echo "正在准备 UPX 包源..."
 
-    # 优先使用系统已安装的 upx
-    if command -v upx &>/dev/null; then
-        mkdir -p "$STAGING_DIR_HOST/bin"
-        ln -sf "$(command -v upx)" "$upx_bin"
-        echo "✔ 已链接系统 UPX: $(command -v upx) -> $upx_bin"
-        return 0
+    # 方式1：尝试通过 feeds 添加
+    local FEEDS_CONF="$GITHUB_WORKSPACE/wrt/feeds.conf"
+    local FEEDS_DEFAULT="$GITHUB_WORKSPACE/wrt/feeds.conf.default"
+    local UPX_FEED_LINE='src-git upx https://github.com/selfcan/openwrt-upx.git'
+    local feeds_target=""
+
+    if [ -f "$FEEDS_CONF" ]; then
+        feeds_target="$FEEDS_CONF"
+    elif [ -f "$FEEDS_DEFAULT" ]; then
+        feeds_target="$FEEDS_DEFAULT"
     fi
 
-    # 系统没有，从源码构建 openwrt-upx
-    local upx_src="$GITHUB_WORKSPACE/wrt/package/openwrt-upx"
-    if [ ! -d "$upx_src/upx" ]; then
-        echo "正在克隆 openwrt-upx..."
-        git clone --depth 1 https://github.com/selfcan/openwrt-upx.git "$upx_src" || {
+    if [ -n "$feeds_target" ]; then
+        if ! grep -q "selfcan/openwrt-upx" "$feeds_target" 2>/dev/null; then
+            echo "$UPX_FEED_LINE" >> "$feeds_target"
+            echo "已添加 upx feed 到 $feeds_target"
+        fi
+        if (cd "$GITHUB_WORKSPACE/wrt" && \
+            ./scripts/feeds update upx 2>/dev/null && \
+            ./scripts/feeds install -a -p upx 2>/dev/null); then
+            echo "✔ UPX feed 安装成功"
+            return 0
+        fi
+        echo "⚠ feeds 方式安装 UPX 失败，回退到直接克隆"
+    fi
+
+    # 方式2：直接克隆到 package 目录
+    local upx_pkg_dir="$GITHUB_WORKSPACE/wrt/package/openwrt-upx"
+    if [ ! -d "$upx_pkg_dir/upx" ]; then
+        echo "正在克隆 openwrt-upx 到 package 目录..."
+        rm -rf "$upx_pkg_dir"
+        git clone --depth 1 https://github.com/selfcan/openwrt-upx.git "$upx_pkg_dir" || {
             echo "❌ 克隆 openwrt-upx 失败" >&2
             return 1
         }
     fi
 
-    echo "正在编译 upx/host ..."
-    (cd "$GITHUB_WORKSPACE/wrt" && make package/upx/host/compile V=s) || {
-        echo "❌ 编译 upx/host 失败" >&2
-        return 1
-    }
-
-    if [ -x "$upx_bin" ]; then
-        echo "✔ UPX 编译完成: $upx_bin"
-        return 0
-    else
-        echo "❌ UPX 编译后仍未找到可执行文件" >&2
-        return 1
-    fi
+    echo "✔ UPX 包源已就位，将在后续 make 时自动编译"
+    return 0
 }
 
-# ---------- 向 Makefile 的 Build/Compile 段注入 UPX 压缩 ----------
-# 用法: add_upx_build_compile <Makefile路径> <二进制名> <相对构建路径>
-# 例:   add_upx_build_compile "$TS_FILE" "tailscaled" "tailscaled"
-#       add_upx_build_compile "$XRAY_FILE" "main" "main"
-add_upx_build_compile() {
+# ============================================
+# 为指定 Makefile 添加 upx/host 依赖并注入压缩命令
+# 用法: add_upx_compress <Makefile> <二进制名> <安装目录>
+# 例:   add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
+# ============================================
+add_upx_compress() {
     local makefile="$1"
     local binary="$2"
-    local build_path="$3"   # 相对于 $(PKG_BUILD_DIR) 的路径，或相对于 Go 构建输出目录
+    local install_dir="${3:-usr/bin}"
+
+    # 去掉可能的前导斜杠
+    install_dir="${install_dir#/}"
 
     if [ ! -f "$makefile" ]; then
         echo "❌ Makefile 不存在: $makefile" >&2
         return 1
     fi
 
-    # 确保 UPX 可用
-    ensure_upx || return 1
+    # 1. 确保 UPX 源存在（不强制编译）
+    ensure_upx_source || return 1
 
-    # 避免重复注入
+    # 2. 添加 upx/host 到 PKG_BUILD_DEPENDS（幂等）
+    if ! grep -q "upx/host" "$makefile" 2>/dev/null; then
+        if grep -q "^PKG_BUILD_DEPENDS" "$makefile"; then
+            sed -i '/^PKG_BUILD_DEPENDS/ s/$/ upx\/host/' "$makefile"
+        else
+            sed -i '/^PKG_BUILD_PARALLEL/i PKG_BUILD_DEPENDS:=upx/host' "$makefile"
+        fi
+        echo "✔ 已添加 upx/host 依赖: $makefile"
+    fi
+
+    # 3. 检查是否已注入过该二进制的压缩命令（幂等）
     if grep -q "UPX compressing ${binary}" "$makefile" 2>/dev/null; then
         echo "ℹ UPX 压缩已存在于: $makefile ($binary)"
         return 0
     fi
 
-    # 确认存在 Build/Compile 段
-    if ! grep -q "^define Build/Compile" "$makefile"; then
-        echo "⚠ $makefile 中没有找到 define Build/Compile 段，跳过 $binary" >&2
+    # 4. 确认存在 install 段
+    if ! grep -q "^define Package/.*/install" "$makefile"; then
+        echo "⚠ $makefile 中没有找到 define Package/.../install 段，跳过 $binary" >&2
         return 1
     fi
 
-    # 生成要插入的 Makefile 代码块
-    # 在 Build/Compile 的 endef 之前插入
+    # 5. 生成压缩代码块并注入
     local tmp_insert
     tmp_insert=$(mktemp)
     cat > "$tmp_insert" << EOF
 	if echo "\$(ARCH)" | grep -qE '^(mips64|riscv64|loongarch64)'; then \\
 		echo "==> UPX skipped for \$(ARCH) (${binary})"; \\
 	elif [ -x "\$(STAGING_DIR_HOST)/bin/upx" ]; then \\
-		if ! \$(STAGING_DIR_HOST)/bin/upx -t \$(PKG_BUILD_DIR)/${build_path} >/dev/null 2>&1; then \\
+		if ! \$(STAGING_DIR_HOST)/bin/upx -t \$(1)/${install_dir}/${binary} >/dev/null 2>&1; then \\
 			echo "==> UPX compressing ${binary} on \$(ARCH)"; \\
-			\$(STAGING_DIR_HOST)/bin/upx --best --lzma \$(PKG_BUILD_DIR)/${build_path} || true; \\
+			\$(STAGING_DIR_HOST)/bin/upx --best --lzma \$(1)/${install_dir}/${binary} || true; \\
 		else \\
 			echo "==> ${binary} already compressed on \$(ARCH)"; \\
 		fi; \\
@@ -488,15 +511,14 @@ add_upx_build_compile() {
 	fi
 EOF
 
-    # 在 Build/Compile 段的 endef 之前插入压缩命令
-    sed -i "/^define Build\/Compile/,/^endef/ {
+    sed -i "/^define Package\/.*\/install/,/^endef/ {
         /^endef/ r $tmp_insert
     }" "$makefile"
 
     rm -f "$tmp_insert"
 
     if grep -q "UPX compressing ${binary}" "$makefile"; then
-        echo "✔ 已为 $binary 注入 UPX 压缩 (Build/Compile): $makefile"
+        echo "✔ 已为 $binary 注入 UPX 压缩: $makefile"
         return 0
     else
         echo "❌ 注入 UPX 压缩失败: $makefile" >&2
@@ -519,7 +541,7 @@ if [ -f "$TS_FILE" ]; then
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
-    add_upx_build_compile "$TS_FILE" "tailscaled" "tailscaled"
+    add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
     echo "---- tailscale_Makefile内容 start ----"
     cat $TS_FILE
     echo "---- tailscale_Makefile内容 end ----"
@@ -533,10 +555,10 @@ if [ -f "$XRAY_FILE" ]; then
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
 	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
-    add_upx_build_compile "$XRAY_FILE" "main" "main" && echo "xray 将被压缩"
+    add_upx_compress "$XRAY_FILE" "xray" "usr/bin" && echo "xray 将被压缩"
 	echo " "
     echo "---- xray-core_Makefile内容 start ----"
-    cat $Xray_FILE
+    cat $XRAY_FILE
     echo "---- xray-core_Makefile内容 end ----"
 	echo " "
 fi
@@ -545,7 +567,7 @@ fi
 MIHOMO_META_FILE=$(find "$PKG_PATH" -maxdepth 5 -type f -wholename "*/mihomo-meta/Makefile")
 if [ -f "$MIHOMO_META_FILE" ]; then
 	echo " "
-    add_upx_build_compile "$MIHOMO_META_FILE" "mihomo" "mihomo"
+    add_upx_compress "$MIHOMO_META_FILE" "mihomo" "/usr/libexec"
 	echo "mihomo 将被压缩"
 	echo " "
     echo "---- mihomo-meta_Makefile内容 start ----"
@@ -559,7 +581,7 @@ fi
 SING_BOX_FILE=$(find "$PKG_PATH" -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
 if [ -f "$SING_BOX_FILE" ]; then
 	echo " "
-    add_upx_build_compile "$SING_BOX_FILE" "sing-box" "sing-box" && echo "sing-box 将被压缩"
+    add_upx_compress "$SING_BOX_FILE" "sing-box" "usr/bin" && echo "xray 将被压缩"
 	echo " "
     echo "---- sing-box_Makefile内容 start ----"
     cat $SING_BOX_FILE
