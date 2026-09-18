@@ -529,8 +529,8 @@ if [ -f "$TS_FILE" ]; then
 fi
 
 #升级Xray
-Xray_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename "*/xray-core/Makefile" -print -quit 2>/dev/null)"
-if [ -f "$Xray_FILE" ]; then
+XRAY_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename "*/xray-core/Makefile" -print -quit 2>/dev/null)"
+if [ -f "$XRAY_FILE" ]; then
 	echo " "
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
