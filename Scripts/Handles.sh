@@ -430,6 +430,7 @@ ensure_upx_source() {
             ./scripts/feeds update upx 2>/dev/null && \
             ./scripts/feeds install -a -p upx 2>/dev/null); then
             echo "✔ UPX feed 安装成功"
+            echo " " && cat $feeds_target
             return 0
         fi
         echo "⚠ feeds 方式安装 UPX 失败，回退到直接克隆"
@@ -446,7 +447,6 @@ ensure_upx_source() {
         }
     fi
     echo "✔ UPX 包源已就位，将在后续 make 时自动编译"
-	echo " " && cat $feeds_target
     return 0
 }
 
