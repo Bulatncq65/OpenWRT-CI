@@ -390,88 +390,25 @@ else
     echo "golang1.26 Makefile already exists, skipping."
 fi
 
-
-# ============================================
-# UPX 二进制压缩工具函数
-# ============================================
-STAGING_DIR_HOST="${GITHUB_WORKSPACE}/wrt/staging_dir/host"
-
-# ============================================
-# 确保 upx 包源存在于构建系统中
-# 优先通过 feeds 添加，失败则直接克隆到 package 目录
-# ============================================
-ensure_upx_source() {
-    # 如果 upx/host 已经编译过，直接返回
-    if [ -x "$STAGING_DIR_HOST/bin/upx" ]; then
-        echo "✔ UPX 已就绪: $STAGING_DIR_HOST/bin/upx"
-        return 0
-    fi
-
-    echo "正在准备 UPX 包源..."
-
-    # 方式1：尝试通过 feeds 添加
-    local FEEDS_CONF="$GITHUB_WORKSPACE/wrt/feeds.conf"
-    local FEEDS_DEFAULT="$GITHUB_WORKSPACE/wrt/feeds.conf.default"
-    local UPX_FEED_LINE='src-git upx https://github.com/selfcan/openwrt-upx.git'
-    local feeds_target=""
-
-    if [ -f "$FEEDS_CONF" ]; then
-        feeds_target="$FEEDS_CONF"
-    elif [ -f "$FEEDS_DEFAULT" ]; then
-        feeds_target="$FEEDS_DEFAULT"
-    fi
-
-    if [ -n "$feeds_target" ]; then
-        if ! grep -q "selfcan/openwrt-upx" "$feeds_target" 2>/dev/null; then
-            echo "$UPX_FEED_LINE" >> "$feeds_target"
-            echo "已添加 upx feed 到 $feeds_target"
-        fi
-        if (cd "$GITHUB_WORKSPACE/wrt" && \
-            ./scripts/feeds update upx 2>/dev/null && \
-            ./scripts/feeds install -a -p upx 2>/dev/null); then
-            echo "✔ UPX feed 安装成功"
-            echo " " && cat $feeds_target
-            return 0
-        fi
-        echo "⚠ feeds 方式安装 UPX 失败，回退到直接克隆"
-    fi
-
-    # 方式2：直接克隆到 package 目录
-    local upx_pkg_dir="$GITHUB_WORKSPACE/wrt/package/openwrt-upx"
-    if [ ! -d "$upx_pkg_dir/upx" ]; then
-        echo "正在克隆 openwrt-upx 到 package 目录..."
-        rm -rf "$upx_pkg_dir"
-        git clone --depth 1 https://github.com/selfcan/openwrt-upx.git "$upx_pkg_dir" || {
-            echo "❌ 克隆 openwrt-upx 失败" >&2
-            return 1
-        }
-    fi
-    echo "✔ UPX 包源已就位，将在后续 make 时自动编译"
-    return 0
-}
-
-# ============================================
-# 为指定 Makefile 添加 upx/host 依赖并注入压缩命令
-# 用法: add_upx_compress <Makefile> <二进制名> <安装目录>
-# 例:   add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
-# ============================================
 add_upx_compress() {
     local makefile="$1"
     local binary="$2"
     local install_dir="${3:-usr/bin}"
 
-    # 去掉可能的前导斜杠
     install_dir="${install_dir#/}"
+
+    # ---- 检查 UPX 源码是否存在 ----
+    if [ ! -d "$PKG_PATH/upx" ] || [ ! -f "$PKG_PATH/upx/Makefile" ]; then
+        echo "⚠ UPX 源码未找到 ($PKG_PATH/upx)，跳过 $binary 的压缩" >&2
+        return 1
+    fi
 
     if [ ! -f "$makefile" ]; then
         echo "❌ Makefile 不存在: $makefile" >&2
         return 1
     fi
 
-    # 1. 确保 UPX 源存在（不强制编译）
-    ensure_upx_source || return 1
-
-    # 2. 添加 upx/host 到 PKG_BUILD_DEPENDS（幂等）
+    # 1. 添加 upx/host 到 PKG_BUILD_DEPENDS（幂等）
     if ! grep -q "upx/host" "$makefile" 2>/dev/null; then
         if grep -q "^PKG_BUILD_DEPENDS" "$makefile"; then
             sed -i '/^PKG_BUILD_DEPENDS/ s/$/ upx\/host/' "$makefile"
@@ -481,35 +418,37 @@ add_upx_compress() {
         echo "✔ 已添加 upx/host 依赖: $makefile"
     fi
 
-    # 3. 检查是否已注入过该二进制的压缩命令（幂等）
+    # 2. 检查是否已注入过该二进制的压缩命令（幂等）
     if grep -q "UPX compressing ${binary}" "$makefile" 2>/dev/null; then
         echo "ℹ UPX 压缩已存在于: $makefile ($binary)"
         return 0
     fi
 
-    # 4. 确认存在 install 段
+    # 3. 确认存在 install 段
     if ! grep -q "^define Package/.*/install" "$makefile"; then
         echo "⚠ $makefile 中没有找到 define Package/.../install 段，跳过 $binary" >&2
         return 1
     fi
 
-    # 5. 生成压缩代码块并注入
+    # 4. 生成压缩代码块并注入
     local tmp_insert
     tmp_insert=$(mktemp)
-    cat > "$tmp_insert" << EOF
-	if echo "\$(ARCH)" | grep -qE '^(mips64|riscv64|loongarch64)'; then \\
-		echo "==> UPX skipped for \$(ARCH) (${binary})"; \\
-	elif [ -x "\$(STAGING_DIR_HOST)/bin/upx" ]; then \\
-		if ! \$(STAGING_DIR_HOST)/bin/upx -t \$(1)/${install_dir}/${binary} >/dev/null 2>&1; then \\
-			echo "==> UPX compressing ${binary} on \$(ARCH)"; \\
-			\$(STAGING_DIR_HOST)/bin/upx --best --lzma \$(1)/${install_dir}/${binary} || true; \\
-		else \\
-			echo "==> ${binary} already compressed on \$(ARCH)"; \\
-		fi; \\
-	else \\
-		echo "==> UPX not found, skipping compression for ${binary}"; \\
+    cat > "$tmp_insert" << 'UPX_EOF'
+	if echo "$(ARCH)" | grep -qE '^(mips64|riscv64|loongarch64)'; then \
+		echo "==> UPX skipped for $(ARCH) ($BINARY_NAME)"; \
+	elif [ -x "$(STAGING_DIR_HOST)/bin/upx" ]; then \
+		if ! $(STAGING_DIR_HOST)/bin/upx -t $(1)/$INSTALL_DIR/$BINARY_NAME >/dev/null 2>&1; then \
+			echo "==> UPX compressing $BINARY_NAME on $(ARCH)"; \
+			$(STAGING_DIR_HOST)/bin/upx --best --lzma $(1)/$INSTALL_DIR/$BINARY_NAME || true; \
+		else \
+			echo "==> $BINARY_NAME already compressed on $(ARCH)"; \
+		fi; \
+	else \
+		echo "==> UPX not found, skipping compression for $BINARY_NAME"; \
 	fi
-EOF
+UPX_EOF
+
+    sed -i "s/\$BINARY_NAME/$binary/g; s|\$INSTALL_DIR|$install_dir|g" "$tmp_insert"
 
     sed -i "/^define Package\/.*\/install/,/^endef/ {
         /^endef/ r $tmp_insert
@@ -541,7 +480,7 @@ if [ -f "$TS_FILE" ]; then
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
-    add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin"
+    add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin" && echo "tailscaled 将被压缩"
     echo "---- tailscale_Makefile内容 start ----"
     cat $TS_FILE
     echo "---- tailscale_Makefile内容 end ----"
@@ -552,8 +491,8 @@ fi
 XRAY_FILE="$(find "$FEEDS_PACKAGES" -maxdepth 3 -type f -wholename "*/xray-core/Makefile" -print -quit 2>/dev/null)"
 if [ -f "$XRAY_FILE" ]; then
 	echo " "
-	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $Xray_FILE
-	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $Xray_FILE
+	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $XRAY_FILE
+	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $XRAY_FILE
 	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
     add_upx_compress "$XRAY_FILE" "xray" "usr/bin" && echo "xray 将被压缩"
 	echo " "
