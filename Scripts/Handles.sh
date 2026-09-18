@@ -445,8 +445,8 @@ ensure_upx_source() {
             return 1
         }
     fi
-
     echo "✔ UPX 包源已就位，将在后续 make 时自动编译"
+	echo " " && cat $feeds_target
     return 0
 }
 
