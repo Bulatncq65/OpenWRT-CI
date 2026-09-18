@@ -480,7 +480,7 @@ if [ -f "$TS_FILE" ]; then
 	else
 		echo "tailscale fix failed; continuing!"
 	fi
-    add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin" && echo "tailscaled 将被压缩"
+   #add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin" && echo "tailscaled 将被压缩"
     echo "---- tailscale_Makefile内容 start ----"
     cat $TS_FILE
     echo "---- tailscale_Makefile内容 end ----"
@@ -493,8 +493,8 @@ if [ -f "$XRAY_FILE" ]; then
 	echo " "
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.9.9" $XRAY_FILE
 	sed -i "/PKG_HASH:=/cPKG_HASH:=efb871a981690688191433a76beef7afdab6750d53cc1775cf8e9e995730ef22" $XRAY_FILE
-	cd $PKG_PATH && echo "xray-core version has update to 26.9.9!"
-    add_upx_compress "$XRAY_FILE" "xray" "usr/bin" && echo "xray 将被压缩"
+	echo "xray-core version has update to 26.9.9!"
+   #add_upx_compress "$XRAY_FILE" "xray" "usr/bin" && echo "xray 将被压缩"
 	echo " "
     echo "---- xray-core_Makefile内容 start ----"
     cat $XRAY_FILE
@@ -506,8 +506,7 @@ fi
 MIHOMO_META_FILE=$(find "$PKG_PATH" -maxdepth 5 -type f -wholename "*/mihomo-meta/Makefile")
 if [ -f "$MIHOMO_META_FILE" ]; then
 	echo " "
-    add_upx_compress "$MIHOMO_META_FILE" "mihomo" "/usr/libexec"
-	echo "mihomo 将被压缩"
+   #add_upx_compress "$MIHOMO_META_FILE" "mihomo" "/usr/libexec" && echo "mihomo 将被压缩"
 	echo " "
     echo "---- mihomo-meta_Makefile内容 start ----"
     cat $MIHOMO_META_FILE
@@ -520,7 +519,7 @@ fi
 SING_BOX_FILE=$(find "$PKG_PATH" -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
 if [ -f "$SING_BOX_FILE" ]; then
 	echo " "
-    add_upx_compress "$SING_BOX_FILE" "sing-box" "usr/bin" && echo "xray 将被压缩"
+   #add_upx_compress "$SING_BOX_FILE" "sing-box" "usr/bin" && echo "xray 将被压缩"
 	echo " "
     echo "---- sing-box_Makefile内容 start ----"
     cat $SING_BOX_FILE

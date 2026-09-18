@@ -83,7 +83,6 @@ UPDATE_PACKAGE "vnt" "lmq8267/luci-app-vnt" "main"
 #UPDATE_PACKAGE "qmodem-generic" "LianXia233/luci-app-qmodem-generic" "main"
 
 UPDATE_PACKAGE "upx" "kuoruan/openwrt-upx" "master" "pkg"
-UPDATE_PACKAGE "ucl" "kuoruan/openwrt-upx" "master" "pkg"
 
 UPDATE_PACKAGE "wrtbwmon" "pyrovski/wrtbwmon" "master"
 UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
