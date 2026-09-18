@@ -2,7 +2,7 @@
 # Copyright (C) 2026 VIKINGYFY
 
 #CI项目
-name: QCA-807lx_128m
+name: QCA-IPQ807X_128M-WIFI-YES
 
 #CI计划
 on:
