@@ -450,6 +450,8 @@ add_upx_compress() {
     local makefile="$1"
     local binary="$2"
     local install_dir="${3:-usr/bin}"
+    # 去掉可能的前导斜杠，避免生成 $(1)//usr/... 这样的双斜杠
+    install_dir="${install_dir#/}"
 
     if [ ! -f "$makefile" ]; then
         echo "❌ Makefile 不存在: $makefile" >&2
