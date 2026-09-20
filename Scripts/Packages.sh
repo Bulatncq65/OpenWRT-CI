@@ -96,7 +96,7 @@ UPDATE_PACKAGE "luci-app-bandix" "timsaya/luci-app-bandix" "main"
 UPDATE_PACKAGE "luci-app-lucky" "gdy666/luci-app-lucky" "main"
 UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
 
-#UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main" "" "luci-app-dae daed"
+UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main" "" "luci-app-dae daed"
 #UPDATE_PACKAGE "daed" "QiuSimons/luci-app-daed" "kix"
 #UPDATE_PACKAGE "vmlinux-btf" "QiuSimons/vmlinux-btf" "master"
 
