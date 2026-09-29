@@ -92,6 +92,20 @@ UPDATE_PACKAGE "mt5700m" "LianXia233/luci-app-mt5700m" "main"
 UPDATE_PACKAGE "netmonitor" "LianXia233/luci-app-netmonitor" "main"
 UPDATE_PACKAGE "qmodem-generic" "LianXia233/luci-app-qmodem-generic" "main"
 
+UPDATE_PACKAGE "wrtbwmon" "pyrovski/wrtbwmon" "master"
+UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
+UPDATE_PACKAGE "openwrt-bandix" "timsaya/openwrt-bandix" "main"
+UPDATE_PACKAGE "luci-app-bandix" "timsaya/luci-app-bandix" "main"
+UPDATE_PACKAGE "luci-app-lucky" "gdy666/luci-app-lucky" "main"
+UPDATE_PACKAGE "luci-app-tailscale" "asvow/luci-app-tailscale" "main"
+
+UPDATE_PACKAGE "upx" "kuoruan/openwrt-upx" "master" "pkg"
+UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main" "" "luci-app-dae daed"
+#UPDATE_PACKAGE "daed" "QiuSimons/luci-app-daed" "kix"
+#UPDATE_PACKAGE "vmlinux-btf" "QiuSimons/vmlinux-btf" "master"
+
+#UPDATE_PACKAGE "mwan3" "dl12345/mwan3" "openwrt-25.12"
+#UPDATE_PACKAGE "luci-app-mwan3" "dl12345/luci-app-mwan3" "openwrt-25.12"
 #更新软件包版本
 UPDATE_VERSION() {
 	local PKG_NAME=$1
