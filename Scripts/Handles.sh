@@ -216,9 +216,9 @@ if [ -f "$MIHOMO_META_FILE" ]; then
     cat $MIHOMO_META_FILE
     echo "---- mihomo-meta_Makefile内容 end ----"
 	echo " "
-    echo "---- mihomo-meta_Makefile内容 start ----"
+    echo "---- mihomo-alpha_Makefile内容 start ----"
     cat $MIHOMO_ALPHA_FILE
-    echo "---- mihomo-meta_Makefile内容 end ----"
+    echo "---- mihomo-alpha_Makefile内容 end ----"
 	echo " "
 fi
 
