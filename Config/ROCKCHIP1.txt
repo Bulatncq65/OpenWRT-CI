@@ -78,7 +78,8 @@ CONFIG_PACKAGE_luci-app-bandix=y
 
 CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_luci-app-dockerman=y
-
+CONFIG_PACKAGE_luci-app-fm350=y
+CONFIG_PACKAGE_luci-app-qmodem-generic=y
 
 # dead支持
 CONFIG_DEVEL=y

@@ -46,6 +46,7 @@ CONFIG_PACKAGE_sysstat=y
 CONFIG_PACKAGE_luci-app-natmapt=y
 CONFIG_PACKAGE_luci-app-qbittorrent=y
 
+
 CONFIG_PACKAGE_luci-app-mini-diskmanager=y
 CONFIG_PACKAGE_luci-app-gecoosac=y
 CONFIG_PACKAGE_luci-app-partexp=y
@@ -59,6 +60,8 @@ CONFIG_PACKAGE_luci-app-bandix=y
 
 CONFIG_PACKAGE_luci-app-lucky=y
 
+CONFIG_PACKAGE_luci-app-fm350=y
+CONFIG_PACKAGE_luci-app-qmodem-generic=y
 
 # dead支持
 CONFIG_PACKAGE_kmod-sched-bpf=y
