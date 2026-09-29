@@ -206,13 +206,18 @@ if [ -f "$XRAY_FILE" ]; then
 fi
 
 #压缩mihomo
-MIHOMO_META_FILE=$(find "$PACKAGE_PATH" -maxdepth 5 -type f -wholename "*/mihomo/Makefile")
+MIHOMO_META_FILE=$(find "$PACKAGE_PATH" -maxdepth 5 -type f -wholename "*/mihomo-meta/Makefile")
+MIHOMO_ALPHA_FILE=$(find "$PACKAGE_PATH" -maxdepth 5 -type f -wholename "*/mihomo-alpha/Makefile")
 if [ -f "$MIHOMO_META_FILE" ]; then
 	echo " "
    #add_upx_compress "$MIHOMO_META_FILE" "mihomo" "/usr/libexec" && echo "mihomo 将被压缩"
 	echo " "
     echo "---- mihomo-meta_Makefile内容 start ----"
     cat $MIHOMO_META_FILE
+    echo "---- mihomo-meta_Makefile内容 end ----"
+	echo " "
+    echo "---- mihomo-meta_Makefile内容 start ----"
+    cat $MIHOMO_ALPHA_FILE
     echo "---- mihomo-meta_Makefile内容 end ----"
 	echo " "
 fi
