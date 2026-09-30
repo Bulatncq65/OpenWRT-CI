@@ -67,6 +67,7 @@ CONFIG_PACKAGE_luci-app-qmodem-sms=y
 CONFIG_PACKAGE_luci-app-qmodem-ttlfw4=y
 CONFIG_PACKAGE_luci-app-qmodem-voip=y
 
+
 # dead支持
 CONFIG_PACKAGE_kmod-sched-bpf=y
 
