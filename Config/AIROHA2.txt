@@ -57,5 +57,3 @@ CONFIG_PACKAGE_luci-app-irqbalance=y
 
 
 
-# dead支持
-CONFIG_PACKAGE_kmod-sched-bpf=y
