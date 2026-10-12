@@ -427,3 +427,24 @@ if [ -f "$TS_FILE" ]; then
     echo "---- tailscale_Makefile内容 end ----"
     echo " "
 fi
+
+
+#替换dae源码为新版
+DAE_NEW="$(find "$PACKAGE_PATH" -maxdepth 3 -type d -name dae -wholename '*/openwrt-daede/dae' -print -quit 2>/dev/null)"
+DAE_OLD="$(find "$FEEDS_PATH/packages" -maxdepth 3 -type d -name dae -wholename '*/net/dae' -print -quit 2>/dev/null)"
+
+if [ -n "$DAE_NEW" ] && [ -d "$DAE_NEW" ] && [ -n "$DAE_OLD" ] && [ -d "$DAE_OLD" ]; then
+	echo " "
+	echo "dae 旧版目录: $DAE_OLD"
+	echo "dae 新版目录: $DAE_NEW"
+	if rm -rf "$DAE_OLD" && mv "$DAE_NEW" "$DAE_OLD"; then
+		echo "dae has been fixed!"
+	else
+		echo "dae fix failed; continuing!"
+	fi
+	echo " "
+else
+	echo " "
+	echo "dae 目录未找到，跳过替换（旧版: ${DAE_OLD:-空} 新版: ${DAE_NEW:-空}）"
+	echo " "
+fi
