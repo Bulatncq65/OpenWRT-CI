@@ -73,7 +73,7 @@ jobs:
         with:
           cleanup-profile: max
           # skip-components: cached-go,cached-python,cached-node # 通过 skip-components 保留编译所需的工具缓存
-          swapfile-size: 2G
+          swapfile-size: 1G
 
       - name: Checkout Projects
         uses: actions/checkout@main
@@ -96,7 +96,6 @@ jobs:
           sudo mkdir -p /mnt/build_wrt
           sudo chown $USER:$USER /mnt/build_wrt
           sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
-          df -h
 
       - name: Initialization Values
         id: initialize-values
@@ -126,6 +125,9 @@ jobs:
       - name: Clone Code
         id: clone-code
         run: |
+          echo "======================="
+          df -h
+          echo "======================="
           git clone --depth=1 --single-branch --branch $WRT_BRANCH $WRT_REPO ./wrt/
 
           cd ./wrt/
@@ -139,7 +141,9 @@ jobs:
           if [ -f "$PROJECT_MIRRORS_FILE" ]; then
             sed -i '/.cn\//d; /tencent/d; /aliyun/d' "$PROJECT_MIRRORS_FILE"
           fi
-
+          echo "======================="
+          df -h
+          echo "======================="
       - name: Check Scripts
         run: |
           find ./ -maxdepth 3 -type f -iregex ".*\(txt\|sh\)$" -exec dos2unix {} \; -exec chmod +x {} \;
@@ -159,20 +163,29 @@ jobs:
       - name: Prepare Restored Build Cache
         if: ${{ !inputs.WRT_TEST && steps.cache-restore.outputs.cache-matched-key != '' }}
         run: |
+          echo "======================="
+          df -h
+          echo "======================="
           find "./wrt/staging_dir" -type d -name "stamp" -not -path "*target*" | while read -r DIR; do
             find "$DIR" -type f -exec touch {} +
           done
           mkdir -p ./wrt/tmp
           echo "1" > ./wrt/tmp/.build
           echo "restored build cache: ${{steps.cache-restore.outputs.cache-matched-key}}"
-
+          echo "======================="
+          df -h
+          echo "======================="
       - name: Update Feeds
         run: |
           cd ./wrt/
-
+          echo "======================="
+          df -h
+          echo "======================="
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-
+          echo "======================="
+          df -h
+          echo "======================="
       - name: Custom Packages
         run: |
           cd ./wrt/
@@ -198,16 +211,24 @@ jobs:
         if: ${{ !inputs.WRT_TEST }}
         run: |
           cd ./wrt/
-
+          echo "======================="
+          df -h
+          echo "======================="
           make download -j$(nproc)
-
+          echo "======================="
+          df -h
+          echo "======================="
       - name: Compile Firmware
         if: ${{ !inputs.WRT_TEST }}
         run: |
           cd ./wrt/
-
+          echo "======================="
+          df -h
+          echo "======================="
           make -j$(nproc) || make -j1 V=s
-
+          echo "======================="
+          df -h
+          echo "======================="
       - name: Save Build Cache
         if: ${{ !inputs.WRT_TEST && success() && steps.cache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@main
