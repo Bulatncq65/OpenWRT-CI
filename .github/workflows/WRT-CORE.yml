@@ -69,7 +69,7 @@ jobs:
       cache_key: ${{steps.clone-code.outputs.cache_key}}
     steps:
       - name: Maximize Build Space
-        uses: justinthelaw/maximize-github-runner-space@latest
+        uses: justinthelaw/maximize-github-runner-space
         with:
           root-reserve-mb: 512
           swap-size-mb: 1024
