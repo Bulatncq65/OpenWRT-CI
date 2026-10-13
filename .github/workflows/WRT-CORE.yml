@@ -69,17 +69,13 @@ jobs:
       cache_key: ${{steps.clone-code.outputs.cache_key}}
     steps:
       - name: Maximize Build Space
-        uses: justinthelaw/maximize-github-runner-space@v0
+        uses: justinthelaw/maximize-github-runner-space@latest
         with:
-          root-reserve-mb: 512
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
-          remove-large-packages: 'true'
-          remove-tool-cache: 'true'   # 删除工具缓存，Initialization Environment 会重新安装 Go/Python 编译环境
+          cleanup-profile: custom
+          # 通过 skip-components 保留编译所需的工具缓存
+          # 该 Action 会自动移除其他预装软件
+          skip-components: cached-go,cached-python,cached-node
+          swapfile-size: 2G
 
       - name: Checkout Projects
         uses: actions/checkout@main
