@@ -102,6 +102,7 @@ jobs:
           sudo mkdir -p /mnt/build_wrt
           sudo chown $USER:$USER /mnt/build_wrt
           sudo ln -s /mnt/build_wrt $GITHUB_WORKSPACE/wrt
+          df -h
 
       - name: Initialization Values
         id: initialize-values
