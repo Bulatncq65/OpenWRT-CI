@@ -69,7 +69,7 @@ jobs:
       cache_key: ${{steps.clone-code.outputs.cache_key}}
     steps:
       - name: Maximize Build Space
-        uses: justinthelaw/maximize-github-runner-space@latest
+        uses: justinthelaw/maximize-github-runner-space@v0.10.0
         with:
           cleanup-profile: custom
           # 通过 skip-components 保留编译所需的工具缓存
