@@ -71,10 +71,8 @@ jobs:
       - name: Maximize Build Space
         uses: justinthelaw/maximize-github-runner-space@v0.10.0
         with:
-          cleanup-profile: custom
-          # 通过 skip-components 保留编译所需的工具缓存
-          # 该 Action 会自动移除其他预装软件
-          skip-components: cached-go,cached-python,cached-node
+          cleanup-profile: max
+          # skip-components: cached-go,cached-python,cached-node # 通过 skip-components 保留编译所需的工具缓存
           swapfile-size: 2G
 
       - name: Checkout Projects
