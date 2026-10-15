@@ -73,7 +73,7 @@ jobs:
         with:
           cleanup-profile: max
           # skip-components: cached-go,cached-python,cached-node # 通过 skip-components 保留编译所需的工具缓存
-          swapfile-size: 1G
+          # swapfile-size: 1G
 
       - name: Checkout Projects
         uses: actions/checkout@main
