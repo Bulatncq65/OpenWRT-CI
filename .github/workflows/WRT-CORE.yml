@@ -72,7 +72,7 @@ jobs:
         uses: justinthelaw/maximize-github-runner-space@v0.10.0
         with:
           cleanup-profile: max
-          skip-components: rust,cached-go # 通过 skip-components:cached-go,cached-python,cached-node保留编译所需的工具缓存
+          skip-components: rust # 通过 skip-components:cached-go,cached-python,cached-node,cached-tools保留编译所需的工具缓存
           # swapfile-size: 1G
 
       - name: Checkout Projects
@@ -109,6 +109,7 @@ jobs:
           echo "======================="
           df -h
           echo "======================="
+          sudo apt update && apt-get install -y --no-install-recommends golang-go
           go version
           rustup --version || true
       - name: Initialization Values
