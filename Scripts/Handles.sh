@@ -403,6 +403,18 @@ else
     echo "golang1.26 Makefile already exists, skipping."
 fi
 
+GOLANG_VERSION="$FEEDS_PATH/packages/lang/golang/golang-version.mk"
+
+if [ -f "$GOLANG_VERSION" ]; then
+    if grep -q '$(if $(PKG_HOST_ONLY),BUILDONLY:=1)' "$GOLANG_VERSION"; then
+        sed -i '/\$(if \$(PKG_HOST_ONLY),BUILDONLY:=1)/d' "$GOLANG_VERSION"
+        echo "Removed BUILDONLY line from $GOLANG_VERSION"
+    else
+        echo "BUILDONLY line not found, skipping."
+    fi
+fi
+
+
 #修复TailScale配置文件冲突
 TS_FILE="$(find "$FEEDS_PATH/packages" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
 if [ -f "$TS_FILE" ]; then
