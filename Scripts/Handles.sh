@@ -413,7 +413,8 @@ if [ -f "$GOLANG_VERSION" ]; then
         echo "BUILDONLY line not found, skipping."
     fi
 fi
-
+  echo "---- GOLANG_VERSION start ----"&&  cat "$GOLANG_VERSION"
+  echo "---- GOLANG_VERSION end ----"
 
 #修复TailScale配置文件冲突
 TS_FILE="$(find "$FEEDS_PATH/packages" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
