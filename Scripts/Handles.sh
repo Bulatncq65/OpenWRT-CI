@@ -404,7 +404,8 @@ else
 fi
 
 GOLANG_VERSION="$FEEDS_PATH/packages/lang/golang/golang-version.mk"
-
+  echo "---- GOLANG_VERSION start ----"&&  cat "$GOLANG_VERSION"
+  echo "---- GOLANG_VERSION end ----"
 if [ -f "$GOLANG_VERSION" ]; then
     if grep -q '$(if $(PKG_HOST_ONLY),BUILDONLY:=1)' "$GOLANG_VERSION"; then
         sed -i '/\$(if \$(PKG_HOST_ONLY),BUILDONLY:=1)/d' "$GOLANG_VERSION"
