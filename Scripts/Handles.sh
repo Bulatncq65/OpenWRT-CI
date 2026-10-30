@@ -404,18 +404,20 @@ else
 fi
 
 GOLANG_VERSION="$FEEDS_PATH/packages/lang/golang/golang-version.mk"
-  echo "---- GOLANG_VERSION start ----"&&  cat "$GOLANG_VERSION"
-  echo "---- GOLANG_VERSION end ----"
+
 if [ -f "$GOLANG_VERSION" ]; then
     if grep -q '$(if $(PKG_HOST_ONLY),BUILDONLY:=1)' "$GOLANG_VERSION"; then
+      echo "---- GOLANG_VERSION start ----"&&  cat "$GOLANG_VERSION"
+      echo "---- GOLANG_VERSION end ----"
         sed -i '/\$(if \$(PKG_HOST_ONLY),BUILDONLY:=1)/d' "$GOLANG_VERSION"
         echo "Removed BUILDONLY line from $GOLANG_VERSION"
+      echo "---- GOLANG_VERSION start ----"&&  cat "$GOLANG_VERSION"
+      echo "---- GOLANG_VERSION end ----"
     else
         echo "BUILDONLY line not found, skipping."
     fi
 fi
-  echo "---- GOLANG_VERSION start ----"&&  cat "$GOLANG_VERSION"
-  echo "---- GOLANG_VERSION end ----"
+
 
 #修复TailScale配置文件冲突
 TS_FILE="$(find "$FEEDS_PATH/packages" -maxdepth 3 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)"
