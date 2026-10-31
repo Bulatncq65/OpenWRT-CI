@@ -47,9 +47,9 @@ jobs:
       #默认主题
       WRT_THEME: argon
       #默认主机名
-      WRT_NAME: NSS
+      WRT_NAME: PPENSS
       #默认WIFI名称
-      WRT_SSID: NSS
+      WRT_SSID: PPENSS
       #默认WIFI密码
       WRT_WORD: 87654321
       #默认地址

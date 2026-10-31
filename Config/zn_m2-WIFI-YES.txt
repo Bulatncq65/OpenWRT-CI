@@ -16,7 +16,6 @@ CONFIG_TARGET_OPTIONS=y
 CONFIG_TARGET_OPTIMIZATION="-Os -pipe -mcpu=cortex-a53+crypto+crc"
 
 
-
 CONFIG_PACKAGE_luci-app-momo=y
 CONFIG_PACKAGE_luci-app-tailscale=y
 CONFIG_PACKAGE_luci-app-softethervpn=y
