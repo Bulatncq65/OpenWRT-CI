@@ -443,3 +443,16 @@ if [ -f "$TS_FILE" ]; then
     echo " "
 fi
 
+EASYTIER_CORE="$(find "$PACKAGE_PATH" -maxdepth 4 -type f -path '*/easytier/Makefile' -print -quit 2>/dev/null)"
+
+if [ -f "$EASYTIER_CORE" ]; then
+	echo " "
+    sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_CORE"
+	echo "easytier_core version has update to 2.6.4!"
+   #add_upx_compress "$EASYTIER_CORE" "xray" "usr/bin" && echo "xray 将被压缩"
+	echo " "
+    echo "---- xray-core_Makefile内容 start ----"
+    cat  "$EASYTIER_CORE"
+    echo "---- xray-core_Makefile内容 end ----"
+	echo " "
+fi
