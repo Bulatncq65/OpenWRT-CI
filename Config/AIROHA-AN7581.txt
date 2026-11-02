@@ -54,7 +54,7 @@ CONFIG_PACKAGE_luci-app-lucky=y
 CONFIG_PACKAGE_luci-app-irqbalance=y
 CONFIG_PACKAGE_luci-app-ddns-go=y
 
-CONFIG_PACKAGE_luci-app-smartmwan=y
+#CONFIG_PACKAGE_luci-app-smartmwan=y
 
 # dead支持
 CONFIG_DEVEL=y

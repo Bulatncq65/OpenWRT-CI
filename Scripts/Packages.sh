@@ -92,7 +92,7 @@ UPDATE_PACKAGE "mt5700" "LianXia233/luci-app-mt5700" "main"
 UPDATE_PACKAGE "mt5700m" "LianXia233/luci-app-mt5700m" "main"
 UPDATE_PACKAGE "netmonitor" "LianXia233/luci-app-netmonitor" "main"
 UPDATE_PACKAGE "qmodem-generic" "LianXia233/luci-app-qmodem-generic" "main"
-UPDATE_PACKAGE "luci-app-smartmwan" "LianXia233/luci-app-smartmwan" "main"
+#UPDATE_PACKAGE "luci-app-smartmwan" "LianXia233/luci-app-smartmwan" "main"
 
 UPDATE_PACKAGE "wrtbwmon" "pyrovski/wrtbwmon" "master"
 UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
