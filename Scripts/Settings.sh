@@ -63,6 +63,7 @@ if [[ "${WRT_TARGET^^}" == *"QUALCOMMAX"* ]]; then
        		sed 's/^/+/' "/tmp/$F"
        	} > "./feeds/packages/net/sqm-scripts/patches/200-$F.patch"
        done
+	  echo "  "&& echo "给标准 sqm-scripts 注入 ppe_cake.qos 成功!"
     fi
 fi
 
