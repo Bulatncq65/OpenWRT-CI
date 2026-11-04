@@ -51,4 +51,20 @@ if [[ "${WRT_TARGET^^}" == *"QUALCOMMAX"* ]]; then
 		find $DTS_PATH -type f ! -iname '*nowifi*' -exec sed -i 's/ipq\(6018\|8074\).dtsi/ipq\1-nowifi.dtsi/g' {} +
 		echo "qualcommax set up nowifi successfully!"
 	fi
+    if [[ "${WRT_BRANCH^^}" == "OWRT" ]]; then
+    # 给标准 sqm-scripts 注入 ppe_cake.qos（PPE shaper device + CAKE + L4S）
+       mkdir -p ./feeds/packages/net/sqm-scripts/patches
+       for F in ppe_cake.qos ppe_cake.qos.help; do
+       	curl -fsL "https://raw.githubusercontent.com/JuliusBairaktaris/sqm-scripts/ppe-cake/src/$F" -o "/tmp/$F" || { echo "警告: 拉取 $F 失败，sqm 将退回标准脚本"; continue; }
+       	{
+       		echo "--- a/src/$F"
+       		echo "+++ b/src/$F"
+       		echo "@@ -0,0 +1,$(wc -l < "/tmp/$F") @@"
+       		sed 's/^/+/' "/tmp/$F"
+       	} > "./feeds/packages/net/sqm-scripts/patches/200-$F.patch"
+       done
+    fi
 fi
+
+
+
