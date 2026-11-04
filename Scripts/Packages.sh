@@ -94,6 +94,7 @@ UPDATE_PACKAGE "netmonitor" "LianXia233/luci-app-netmonitor" "main"
 UPDATE_PACKAGE "qmodem-generic" "LianXia233/luci-app-qmodem-generic" "main"
 #UPDATE_PACKAGE "luci-app-smartmwan" "LianXia233/luci-app-smartmwan" "main"
 
+UPDATE_PACKAGE "sqm-scripts-nss" "JuliusBairaktaris/sqm-scripts-nss" "main"
 UPDATE_PACKAGE "wrtbwmon" "pyrovski/wrtbwmon" "master"
 UPDATE_PACKAGE "luci-app-pushbot" "zzsj0928/luci-app-pushbot" "master"
 UPDATE_PACKAGE "openwrt-bandix" "timsaya/openwrt-bandix" "main"
