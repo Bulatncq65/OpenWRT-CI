@@ -459,32 +459,25 @@ fi
 
 
 # ============================================
-# UPX rootfs 压缩钩子 - 方案 C（诊断增强版）
-#
-# 机制：
-#   1) 生成独立文件 $(pwd -P)/upx-hook.mk
-#   2) 扫描 target/linux/<board>/image/ 下所有含
-#      $(eval $(call BuildImage)) 的 Makefile / *.mk
-#   3) 用 sed 在 BuildImage eval 之前插入
-#         include $(TOPDIR)/upx-hook.mk
-#      保证 ROOTFS_POSTPROCESS_COMMAND 在展开时已含钩子
-#   4) 全量诊断日志
+# UPX rootfs 压缩钩子 - 方案 C 修复版
+# - BOARD 解析：优先 $WRT_TARGET（最可靠），其次 Config/<cfg>.txt，最后 ./.config
+# - 独立 upx-hook.mk + 在 $(eval $(call BuildImage)) 前 include
+# - 全程诊断日志
 # ============================================
 
 echo "[upx] ============ UPX Hook 诊断开始 ============"
-echo "[upx] --- 变量可用性 ---"
-echo "[upx] WRT_CONFIG       = '${WRT_CONFIG:-<unset>}'"
-echo "[upx] WRT_TARGET       = '${WRT_TARGET:-<unset>}'"
-echo "[upx] WRT_BRANCH       = '${WRT_BRANCH:-<unset>}'"
-echo "[upx] WRT_SOURCE       = '${WRT_SOURCE:-<unset>}'"
-echo "[upx] GITHUB_WORKSPACE = '${GITHUB_WORKSPACE:-<unset>}'"
-echo "[upx] PWD(-P)          = '$(pwd -P)'"
-echo "[upx] matrix.CONFIG    = 仅 workflow 顶层可用；脚本侧以 WRT_CONFIG 间接使用"
+echo "[upx] WRT_CONFIG          = '${WRT_CONFIG:-<unset>}'"
+echo "[upx] WRT_TARGET          = '${WRT_TARGET:-<unset>}'"
+echo "[upx] WRT_SUBTARGET       = '${WRT_SUBTARGET:-<unset>}'"
+echo "[upx] WRT_BRANCH          = '${WRT_BRANCH:-<unset>}'"
+echo "[upx] GITHUB_WORKSPACE    = '${GITHUB_WORKSPACE:-<unset>}'"
+echo "[upx] PWD(-P)             = '$(pwd -P)'"
+echo "[upx] ./.config exists?   = $([ -f ./.config ] && echo YES || echo NO)"
+echo "[upx] \$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt exists? = $([ -f "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" ] && echo YES || echo NO)"
 echo "[upx] UPX_ENABLED_CONFIGS = '${UPX_ENABLED_CONFIGS:-<unset>}'"
 echo "[upx] UPX_SKIP_KEYWORDS   = '${UPX_SKIP_KEYWORDS:-<unset>}'"
 echo "[upx] UPX_FORCE_ENABLE    = '${UPX_FORCE_ENABLE:-<unset>}'"
 
-# ---- 构建机 UPX 检查 ----
 ensure_upx_on_builder() {
     echo "[upx] --- 构建机 UPX / readelf ---"
     if ! command -v upx >/dev/null 2>&1 && ! command -v upx-ucl >/dev/null 2>&1; then
@@ -499,15 +492,12 @@ ensure_upx_on_builder() {
     else
         echo "[upx] 构建机无 upx，稍后将回退 staging_dir"
     fi
-    if command -v readelf >/dev/null 2>&1; then
-        echo "[upx] readelf = $(readelf --version 2>&1 | head -n 1 || true)"
-    else
+    command -v readelf >/dev/null 2>&1 && \
+        echo "[upx] readelf = $(readelf --version 2>&1 | head -n 1 || true)" || \
         echo "[upx] readelf 不可用"
-    fi
 }
 ensure_upx_on_builder
 
-# ---- 逗号分隔列表解析（去两端空白 + 小写）----
 upx_split_trim_lower() {
     local raw="$1"
     local item trimmed
@@ -519,7 +509,6 @@ upx_split_trim_lower() {
     done
 }
 
-# ---- 白名单 / 排除法判定 ----
 UPX_SKIP_KEYWORDS="${UPX_SKIP_KEYWORDS:-x86,rockchip,airoha}"
 UPX_ENABLED_CONFIGS="${UPX_ENABLED_CONFIGS:-}"
 UPX_SHOULD_APPLY=0
@@ -530,7 +519,6 @@ if [ -n "$UPX_ENABLED_CONFIGS" ]; then
     echo "[upx] 模式: 白名单，列表='$UPX_ENABLED_CONFIGS'"
     while IFS= read -r PAT; do
         [ -n "$PAT" ] || continue
-        echo "[upx] 白名单匹配: WRT_CONFIG_LC='$WRT_CONFIG_LC' vs PAT='$PAT'"
         if [[ "$WRT_CONFIG_LC" == $PAT ]]; then
             UPX_SHOULD_APPLY=1
             echo "[upx] 命中白名单 '$PAT'，启用 UPX"
@@ -543,7 +531,6 @@ else
     UPX_SHOULD_APPLY=1
     while IFS= read -r KW; do
         [ -n "$KW" ] || continue
-        echo "[upx] 跳过关键词匹配: WRT_CONFIG_LC='$WRT_CONFIG_LC' vs KW='$KW'"
         if [[ "$WRT_CONFIG_LC" == *"$KW"* ]]; then
             UPX_SHOULD_APPLY=0
             echo "[upx] 命中跳过关键词 '$KW'，跳过"
@@ -564,28 +551,41 @@ if [ "$UPX_SHOULD_APPLY" -ne 1 ]; then
     echo "[upx] 跳过注入"
     echo "[upx] ============ UPX Hook 诊断结束 ============"
 else
-    # ---- 解析 BOARD ----
-    UPX_CURRENT_BOARD=""
-    if [ -f ./.config ]; then
-        UPX_CURRENT_BOARD=$(grep -m 1 -oP '^CONFIG_TARGET_\K[^=]+(?==y)' ./.config 2>/dev/null || echo "")
+    # ---------- BOARD 解析 ----------
+    # 优先级：$WRT_TARGET > Config/<cfg>.txt > ./.config
+    UPX_CURRENT_BOARD="${WRT_TARGET:-}"
+    UPX_BOARD_SRC="WRT_TARGET"
+    if [ -z "$UPX_CURRENT_BOARD" ] && [ -f "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" ]; then
+        UPX_CURRENT_BOARD=$(grep -m 1 -oP '^CONFIG_TARGET_\K[^=]+(?==y)' \
+            "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" 2>/dev/null || echo "")
+        UPX_BOARD_SRC="Config/$WRT_CONFIG.txt"
     fi
-    echo "[upx] UPX_CURRENT_BOARD='$UPX_CURRENT_BOARD'"
+    if [ -z "$UPX_CURRENT_BOARD" ] && [ -f ./.config ]; then
+        UPX_CURRENT_BOARD=$(grep -m 1 -oP '^CONFIG_TARGET_\K[^=]+(?==y)' \
+            ./.config 2>/dev/null || echo "")
+        UPX_BOARD_SRC=".config"
+    fi
+    echo "[upx] UPX_CURRENT_BOARD='$UPX_CURRENT_BOARD' (来源: $UPX_BOARD_SRC)"
 
     if [ -z "$UPX_CURRENT_BOARD" ]; then
-        echo "[upx] FATAL: 无法从 .config 解析 BOARD，放弃注入"
+        echo "[upx] FATAL: BOARD 解析失败"
+        echo "[upx] --- 兜底诊断："
+        echo "[upx]   ls Config/*.txt (前 5 个):"
+        ls "$GITHUB_WORKSPACE/Config/"*.txt 2>/dev/null | head -5 || true
+        echo "[upx]   Config 目录顶层:"
+        ls "$GITHUB_WORKSPACE/Config/" 2>/dev/null | head -10 || true
     else
-        # ---- 生成 upx-hook.mk ----
+        # ---------- 生成 upx-hook.mk ----------
         UPX_HOOK_FILE="$(pwd -P)/upx-hook.mk"
-        echo "[upx] --- 写入 $UPX_HOOK_FILE ---"
+        echo "[upx] --- 生成 $UPX_HOOK_FILE ---"
         cat > "$UPX_HOOK_FILE" << 'UPX_HOOK_EOF'
 # upx-hook.mk - 由 Handles.sh 自动生成
-# 通过 ROOTFS_POSTPROCESS_COMMAND 在 mksquashfs 前压缩 rootfs 中目标 ELF
 ifndef UPX_ROOTFS_HOOK_INCLUDED
 UPX_ROOTFS_HOOK_INCLUDED := 1
 
 define Build/upx_rootfs_compress
 	( \
-		echo "[upx-rootfs] invoked: arg1='$(1)' TARGET_DIR='$(TARGET_DIR)' IMAGE_ROOTFS='$(IMAGE_ROOTFS)' ARCH='$(ARCH)'"; \
+		echo "[upx-rootfs] invoked arg1='$(1)' ARCH='$(ARCH)'"; \
 		ROOTFS_DIR=""; \
 		for CAND in "$(1)" "$(TARGET_DIR)" "$(IMAGE_ROOTFS)"; do \
 			if [ -n "$$CAND" ] && [ -d "$$CAND" ]; then ROOTFS_DIR="$$CAND"; break; fi; \
@@ -627,58 +627,59 @@ define Build/upx_rootfs_compress
 endef
 
 ROOTFS_POSTPROCESS_COMMAND += upx_rootfs_compress
-
 endif
 UPX_HOOK_EOF
-        echo "[upx] upx-hook.mk 大小: $(stat -c %s "$UPX_HOOK_FILE") bytes"
-        echo "[upx] upx-hook.mk 前 3 行:"; head -3 "$UPX_HOOK_FILE" || true
-        echo "[upx] upx-hook.mk 后 5 行:"; tail -5 "$UPX_HOOK_FILE" || true
+        echo "[upx] upx-hook.mk 大小=$(stat -c %s "$UPX_HOOK_FILE") bytes"
 
-        # ---- 扫描 target image 目录 ----
+        # ---------- 注入 ----------
         UPX_IMAGE_DIR="./target/linux/$UPX_CURRENT_BOARD/image"
-        if [ ! -d "$UPX_IMAGE_DIR" ]; then
-            echo "[upx] WARN: $UPX_IMAGE_DIR 不存在，退化到 ./target/linux/$UPX_CURRENT_BOARD/"
-            UPX_IMAGE_DIR="./target/linux/$UPX_CURRENT_BOARD"
-        fi
+        [ -d "$UPX_IMAGE_DIR" ] || UPX_IMAGE_DIR="./target/linux/$UPX_CURRENT_BOARD"
         echo "[upx] --- 扫描 $UPX_IMAGE_DIR ---"
-        echo "[upx] 目录内容："
-        ls -la "$UPX_IMAGE_DIR" || true
+        ls -la "$UPX_IMAGE_DIR" 2>/dev/null || true
 
         UPX_INJECTED=0
         while IFS= read -r MK; do
             [ -n "$MK" ] || continue
-            echo "[upx] ------ 检查 $MK ------"
+            echo "[upx] --- $MK ---"
             if ! grep -q '\$(eval \$(call BuildImage))' "$MK"; then
-                echo "[upx]   无 \$(eval \$(call BuildImage))，跳过"
+                echo "[upx]   无 BuildImage eval，跳过"
                 continue
             fi
             if grep -q 'upx-hook.mk' "$MK"; then
                 echo "[upx]   已含 upx-hook.mk include，跳过"
                 continue
             fi
-            echo "[upx]   --- 注入前 ROOTFS_POSTPROCESS_COMMAND / BuildImage 相关行 ---"
-            grep -n 'ROOTFS_POSTPROCESS_COMMAND\|BuildImage\|upx-hook' "$MK" || true
+            echo "[upx]   注入前 (ROOTFS_POSTPROCESS_COMMAND / BuildImage):"
+            grep -n 'ROOTFS_POSTPROCESS_COMMAND\|eval.*BuildImage' "$MK" || true
+
             sed -i '/\$(eval \$(call BuildImage))/i include $(TOPDIR)/upx-hook.mk' "$MK"
-            echo "[upx]   --- 注入后相关行 ---"
-            grep -n 'ROOTFS_POSTPROCESS_COMMAND\|BuildImage\|upx-hook' "$MK" || true
-            echo "[upx]   --- 注入后文件内容 [head -40] ---"
-            head -40 "$MK" || true
-            echo "[upx]   --- 注入后文件内容 [tail -40] ---"
-            tail -40 "$MK" || true
+
+            echo "[upx]   注入后:"
+            grep -n 'ROOTFS_POSTPROCESS_COMMAND\|upx-hook\|eval.*BuildImage' "$MK" || true
+
             UPX_INJECTED=$((UPX_INJECTED + 1))
-        done < <(find "$UPX_IMAGE_DIR" -maxdepth 3 -type f \( -name 'Makefile' -o -name '*.mk' \) 2>/dev/null)
+        done < <(find "$UPX_IMAGE_DIR" -maxdepth 3 -type f \
+                    \( -name 'Makefile' -o -name '*.mk' \) 2>/dev/null)
 
         echo "[upx] === 注入文件数量: $UPX_INJECTED ==="
 
-        # ---- 全局诊断 ----
-        echo "[upx] === 全局 ROOTFS_POSTPROCESS_COMMAND 分布 (include/ + target/linux/) ==="
-        grep -rn 'ROOTFS_POSTPROCESS_COMMAND' include/ target/linux/ 2>/dev/null | head -60 || true
+        # ---------- 全局诊断 ----------
+        echo "[upx] === 全局 ROOTFS_POSTPROCESS_COMMAND 分布 (前 40 行) ==="
+        grep -rn 'ROOTFS_POSTPROCESS_COMMAND' include/ target/linux/ 2>/dev/null | head -40 || true
 
-        echo "[upx] === include/image.mk 结构诊断 ==="
-        grep -n 'ROOTFS_POSTPROCESS_COMMAND\|^include\|define BuildImage\|^endef$' include/image.mk 2>/dev/null | head -60 || true
+        echo "[upx] === include/image.mk 中 ROOTFS_POSTPROCESS_COMMAND 定义 ==="
+        grep -n 'ROOTFS_POSTPROCESS_COMMAND' include/image.mk 2>/dev/null || true
 
-        echo "[upx] === 全局 grep 'eval.*BuildImage' 位置 ==="
-        grep -rn 'eval.*BuildImage' "target/linux/$UPX_CURRENT_BOARD/" 2>/dev/null | head -30 || true
+        echo "[upx] === 注入文件后 head -30 校验 ==="
+        for MK in $(find "$UPX_IMAGE_DIR" -maxdepth 3 -type f \
+                     \( -name 'Makefile' -o -name '*.mk' \) 2>/dev/null); do
+            if grep -q 'upx-hook.mk' "$MK" 2>/dev/null; then
+                echo "[upx] --- $MK ---"
+                head -30 "$MK"
+                echo "[upx] ..."
+                tail -30 "$MK"
+            fi
+        done
     fi
     echo "[upx] ============ UPX Hook 诊断结束 ============"
 fi
