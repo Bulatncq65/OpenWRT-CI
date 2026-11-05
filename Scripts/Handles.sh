@@ -458,61 +458,108 @@ if [ -f "$EASYTIER_CORE" ]; then
 fi
 
 # ============================================
-# 注入 UPX rootfs 压缩钩子
-# 在 rootfs 组装完成、mksquashfs 之前，
-# 对 tailscaled / sing-box / mihomo / xray 执行 UPX 压缩
+# 注入 UPX rootfs 压缩钩子（v2：注入 include/image.mk）
 #
-# 特性：
-#   1. 构建机 UPX 缺失时自动尝试 apt 安装
-#   2. mips64 / riscv64 / loongarch64 架构整体跳过
-#   3. 已 UPX 压缩过的文件跳过（基于 .UPX section / UPX! 魔数）
-#   4. 保留 ELF 可执行文件检测，非 ELF 不处理
+# 为什么不注入 target/linux/<board>/image/Makefile：
+#   ROOTFS_POSTPROCESS_COMMAND 在 BuildImage 宏 eval 阶段
+#   通过 $(foreach hook,$(ROOTFS_POSTPROCESS_COMMAND),...) 立即展开；
+#   追加到 $(eval $(call BuildImage)) 之后不会被调用。
+# 注入到 include/image.mk 末尾，保证 BuildImage 展开前变量已包含钩子。
 # ============================================
 
-# ---- 1. 确保构建机有可用的 UPX 与 readelf ----
 ensure_upx_on_builder() {
     echo "[upx-setup] 检查构建机 UPX / readelf ..."
-
     if ! command -v upx >/dev/null 2>&1 && ! command -v upx-ucl >/dev/null 2>&1; then
-        echo "[upx-setup] 未找到 upx，尝试通过 apt 安装 upx-ucl ..."
         sudo apt-get update -qq >/dev/null 2>&1 || true
         sudo apt-get install -y -qq upx-ucl >/dev/null 2>&1 || \
             sudo apt-get install -y -qq upx >/dev/null 2>&1 || true
     fi
-
     if command -v upx >/dev/null 2>&1; then
-        echo "[upx-setup] upx 可用："
-        upx --version | head -n 2
+        echo "[upx-setup] upx 可用：$(upx --version | head -n 1)"
     elif command -v upx-ucl >/dev/null 2>&1; then
-        echo "[upx-setup] upx-ucl 可用："
-        upx-ucl --version | head -n 2
+        echo "[upx-setup] upx-ucl 可用：$(upx-ucl --version | head -n 1)"
     else
         echo "[upx-setup] 构建机 UPX 不可用，后续将回退到 staging_dir 中的 upx/host"
     fi
-
     if command -v readelf >/dev/null 2>&1; then
-        echo "[upx-setup] readelf 可用："
-        readelf --version | head -n 1
+        echo "[upx-setup] readelf 可用：$(readelf --version | head -n 1)"
     else
-        echo "[upx-setup] 警告：readelf 不可用，重复压缩检测将回退到字符串匹配"
+        echo "[upx-setup] 警告：readelf 不可用"
     fi
 }
 ensure_upx_on_builder
 
-# ---- 2. 向 qualcommax image Makefile 注入 UPX 压缩钩子 ----
-UPX_TARGET_MK="./target/linux/qualcommax/image/Makefile"
+# 逗号分隔列表解析：去两端空白 + 小写
+upx_split_trim_lower() {
+    local raw="$1"
+    local item trimmed
+    local IFS=','
+    for item in $raw; do
+        trimmed=$(printf '%s' "$item" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+        [ -n "$trimmed" ] || continue
+        printf '%s\n' "${trimmed,,}"
+    done
+}
 
-if [ -f "$UPX_TARGET_MK" ] && ! grep -q 'upx_rootfs_compress' "$UPX_TARGET_MK"; then
-    cat >> "$UPX_TARGET_MK" << 'UPX_HOOK_EOF'
+UPX_SKIP_KEYWORDS="${UPX_SKIP_KEYWORDS:-x86,rockchip,airoha}"
+UPX_ENABLED_CONFIGS="${UPX_ENABLED_CONFIGS:-}"
+UPX_SHOULD_APPLY=0
+WRT_CONFIG_LC="${WRT_CONFIG,,}"
+
+if [ -n "$UPX_ENABLED_CONFIGS" ]; then
+    while IFS= read -r PAT; do
+        [ -n "$PAT" ] || continue
+        if [[ "$WRT_CONFIG_LC" == $PAT ]]; then
+            UPX_SHOULD_APPLY=1
+            echo "[upx-setup] WRT_CONFIG=$WRT_CONFIG 命中白名单 '$PAT'，执行 UPX"
+            break
+        fi
+    done < <(upx_split_trim_lower "$UPX_ENABLED_CONFIGS")
+    [ "$UPX_SHOULD_APPLY" -eq 0 ] && echo "[upx-setup] WRT_CONFIG=$WRT_CONFIG 不在白名单，跳过"
+else
+    UPX_SHOULD_APPLY=1
+    while IFS= read -r KW; do
+        [ -n "$KW" ] || continue
+        if [[ "$WRT_CONFIG_LC" == *"$KW"* ]]; then
+            UPX_SHOULD_APPLY=0
+            echo "[upx-setup] WRT_CONFIG=$WRT_CONFIG 包含跳过关键词 '$KW'，跳过"
+            break
+        fi
+    done < <(upx_split_trim_lower "$UPX_SKIP_KEYWORDS")
+    [ "$UPX_SHOULD_APPLY" -eq 1 ] && echo "[upx-setup] WRT_CONFIG=$WRT_CONFIG 未命中跳过关键词，执行 UPX"
+fi
+
+if [[ "${UPX_FORCE_ENABLE,,}" == "true" ]]; then
+    UPX_SHOULD_APPLY=1
+    echo "[upx-setup] UPX_FORCE_ENABLE=true，强制启用"
+fi
+
+if [ "$UPX_SHOULD_APPLY" -ne 1 ]; then
+    echo "[upx-setup] 跳过 UPX 钩子注入"
+else
+    UPX_TARGET_MK="./include/image.mk"
+
+    echo "[upx-setup] === 注入前检查 ==="
+    if [ -f "$UPX_TARGET_MK" ]; then
+        echo "[upx-setup] $UPX_TARGET_MK 存在，大小 $(stat -c %s "$UPX_TARGET_MK") 字节"
+        echo "[upx-setup] ROOTFS_POSTPROCESS_COMMAND / upx 相关行:"
+        grep -n 'ROOTFS_POSTPROCESS_COMMAND\|upx_rootfs_compress' "$UPX_TARGET_MK" 2>/dev/null || echo "  (无)"
+    else
+        echo "[upx-setup] 错误：$UPX_TARGET_MK 不存在！"
+    fi
+
+    if [ -f "$UPX_TARGET_MK" ] && ! grep -q 'upx_rootfs_compress' "$UPX_TARGET_MK"; then
+        cat >> "$UPX_TARGET_MK" << 'UPX_HOOK_EOF'
 
 # ---- 自定义：在 squashfs 生成前执行 UPX 压缩 ----
-# 跳过架构：mips64 / riscv64 / loongarch64
-# 压缩目标：tailscaled / sing-box / mihomo / xray
+# - 跳过架构：mips64 / riscv64 / loongarch64
+# - 重复压缩检测：readelf .UPX section / UPX! 魔数
+# - 仅处理 ELF 可执行文件
 define Build/upx_rootfs_compress
 	( \
 		case "$(ARCH)" in \
 			mips64*|riscv64*|loongarch64*) \
-				echo "[upx-rootfs] ARCH=$(ARCH) 属于不支持或收益不佳的架构，整体跳过"; \
+				echo "[upx-rootfs] ARCH=$(ARCH) 属于跳过架构，整体跳过"; \
 				exit 0 ;; \
 		esac; \
 		UPX_BIN=""; \
@@ -526,6 +573,7 @@ define Build/upx_rootfs_compress
 			exit 0; \
 		fi; \
 		echo "[upx-rootfs] 使用 UPX: $$UPX_BIN"; \
+		echo "[upx-rootfs] ROOTFS=$(IMAGE_ROOTFS) ARCH=$(ARCH)"; \
 		for NAME in tailscaled sing-box mihomo xray; do \
 			find "$(IMAGE_ROOTFS)" \
 				\( -path "*/bin/*" -o -path "*/sbin/*" -o -path "*/usr/bin/*" -o -path "*/usr/sbin/*" -o -path "*/usr/libexec/*" \) \
@@ -551,7 +599,15 @@ define Build/upx_rootfs_compress
 endef
 ROOTFS_POSTPROCESS_COMMAND += upx_rootfs_compress
 UPX_HOOK_EOF
-    echo "[upx-setup] qualcommax: UPX rootfs 压缩钩子已注入"
-else
-    echo "[upx-setup] qualcommax: 钩子已存在或 image/Makefile 未找到，跳过注入"
+        echo "[upx-setup] 已向 $UPX_TARGET_MK 注入 UPX 钩子"
+    elif grep -q 'upx_rootfs_compress' "$UPX_TARGET_MK"; then
+        echo "[upx-setup] 已存在 upx_rootfs_compress，跳过注入"
+    fi
+
+    echo "[upx-setup] === 注入后检查 ==="
+    echo "[upx-setup] $UPX_TARGET_MK 尾部 20 行:"
+    tail -n 20 "$UPX_TARGET_MK"
+    echo "[upx-setup] ROOTFS_POSTPROCESS_COMMAND / upx 相关行:"
+    grep -n 'ROOTFS_POSTPROCESS_COMMAND\|upx_rootfs_compress' "$UPX_TARGET_MK" 2>/dev/null || echo "  (无)"
 fi
+
