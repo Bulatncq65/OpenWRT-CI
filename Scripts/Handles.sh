@@ -502,7 +502,7 @@ upx_split_trim_lower() {
 }
 
 UPX_SKIP_KEYWORDS="${UPX_SKIP_KEYWORDS:-x86,rockchip,airoha}"
-UPX_ENABLED_CONFIGS="${UPX_ENABLED_CONFIGS:-}"
+UPX_ENABLED_CONFIGS="zn_m2*, IPQ*, MEDIATEK*"
 UPX_SHOULD_APPLY=0
 WRT_CONFIG_LC="${WRT_CONFIG,,}"
 
@@ -610,4 +610,3 @@ UPX_HOOK_EOF
     echo "[upx-setup] ROOTFS_POSTPROCESS_COMMAND / upx 相关行:"
     grep -n 'ROOTFS_POSTPROCESS_COMMAND\|upx_rootfs_compress' "$UPX_TARGET_MK" 2>/dev/null || echo "  (无)"
 fi
-
