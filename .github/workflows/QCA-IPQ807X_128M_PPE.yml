@@ -63,6 +63,6 @@ jobs:
       #源码名称
       WRT_SOURCE: ${{matrix.SOURCE}}
       #插件调整
-      WRT_PACKAGE: 'CONFIG_PACKAGE_luci-app-qca-ppe-qos=y\nCONFIG_PACKAGE_luci-app-sqm=y\nCONFIG_PACKAGE_qca-ppe-qos=y\nCONFIG_KERNEL_DCB=y\n${{ inputs.PACKAGE }}'
+      WRT_PACKAGE: ${{ inputs.PACKAGE }}
       #仅输出配置文件
       WRT_TEST: ${{inputs.TEST || false}}

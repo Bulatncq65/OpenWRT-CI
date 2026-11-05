@@ -456,3 +456,102 @@ if [ -f "$EASYTIER_CORE" ]; then
     echo "---- easytier-core_Makefile内容 end ----"
 	echo " "
 fi
+
+# ============================================
+# 注入 UPX rootfs 压缩钩子
+# 在 rootfs 组装完成、mksquashfs 之前，
+# 对 tailscaled / sing-box / mihomo / xray 执行 UPX 压缩
+#
+# 特性：
+#   1. 构建机 UPX 缺失时自动尝试 apt 安装
+#   2. mips64 / riscv64 / loongarch64 架构整体跳过
+#   3. 已 UPX 压缩过的文件跳过（基于 .UPX section / UPX! 魔数）
+#   4. 保留 ELF 可执行文件检测，非 ELF 不处理
+# ============================================
+
+# ---- 1. 确保构建机有可用的 UPX 与 readelf ----
+ensure_upx_on_builder() {
+    echo "[upx-setup] 检查构建机 UPX / readelf ..."
+
+    if ! command -v upx >/dev/null 2>&1 && ! command -v upx-ucl >/dev/null 2>&1; then
+        echo "[upx-setup] 未找到 upx，尝试通过 apt 安装 upx-ucl ..."
+        sudo apt-get update -qq >/dev/null 2>&1 || true
+        sudo apt-get install -y -qq upx-ucl >/dev/null 2>&1 || \
+            sudo apt-get install -y -qq upx >/dev/null 2>&1 || true
+    fi
+
+    if command -v upx >/dev/null 2>&1; then
+        echo "[upx-setup] upx 可用："
+        upx --version | head -n 2
+    elif command -v upx-ucl >/dev/null 2>&1; then
+        echo "[upx-setup] upx-ucl 可用："
+        upx-ucl --version | head -n 2
+    else
+        echo "[upx-setup] 构建机 UPX 不可用，后续将回退到 staging_dir 中的 upx/host"
+    fi
+
+    if command -v readelf >/dev/null 2>&1; then
+        echo "[upx-setup] readelf 可用："
+        readelf --version | head -n 1
+    else
+        echo "[upx-setup] 警告：readelf 不可用，重复压缩检测将回退到字符串匹配"
+    fi
+}
+ensure_upx_on_builder
+
+# ---- 2. 向 qualcommax image Makefile 注入 UPX 压缩钩子 ----
+UPX_TARGET_MK="./target/linux/qualcommax/image/Makefile"
+
+if [ -f "$UPX_TARGET_MK" ] && ! grep -q 'upx_rootfs_compress' "$UPX_TARGET_MK"; then
+    cat >> "$UPX_TARGET_MK" << 'UPX_HOOK_EOF'
+
+# ---- 自定义：在 squashfs 生成前执行 UPX 压缩 ----
+# 跳过架构：mips64 / riscv64 / loongarch64
+# 压缩目标：tailscaled / sing-box / mihomo / xray
+define Build/upx_rootfs_compress
+	( \
+		case "$(ARCH)" in \
+			mips64*|riscv64*|loongarch64*) \
+				echo "[upx-rootfs] ARCH=$(ARCH) 属于不支持或收益不佳的架构，整体跳过"; \
+				exit 0 ;; \
+		esac; \
+		UPX_BIN=""; \
+		for CAND in "$(STAGING_DIR_HOST)/bin/upx" "$(STAGING_DIR_HOST)/bin/upx-ucl" upx upx-ucl; do \
+			if command -v "$$CAND" >/dev/null 2>&1 || [ -x "$$CAND" ]; then \
+				UPX_BIN="$$CAND"; break; \
+			fi; \
+		done; \
+		if [ -z "$$UPX_BIN" ]; then \
+			echo "[upx-rootfs] 未找到可用的 UPX，跳过"; \
+			exit 0; \
+		fi; \
+		echo "[upx-rootfs] 使用 UPX: $$UPX_BIN"; \
+		for NAME in tailscaled sing-box mihomo xray; do \
+			find "$(IMAGE_ROOTFS)" \
+				\( -path "*/bin/*" -o -path "*/sbin/*" -o -path "*/usr/bin/*" -o -path "*/usr/sbin/*" -o -path "*/usr/libexec/*" \) \
+				-type f -name "$$NAME" -print0 2>/dev/null | \
+			while IFS= read -r -d '' FILE; do \
+				file "$$FILE" | grep -q 'ELF.*executable' || continue; \
+				if readelf -S "$$FILE" 2>/dev/null | grep -q '\.UPX'; then \
+					echo "[upx-rootfs] SKIP $$FILE （已 UPX 压缩，section 检测）"; continue; \
+				fi; \
+				if grep -q 'UPX!' "$$FILE" 2>/dev/null; then \
+					echo "[upx-rootfs] SKIP $$FILE （已 UPX 压缩，魔数检测）"; continue; \
+				fi; \
+				BEFORE=$$(stat -c %s "$$FILE"); \
+				if "$$UPX_BIN" --lzma -9 --no-progress "$$FILE" >/dev/null 2>&1; then \
+					AFTER=$$(stat -c %s "$$FILE"); \
+					echo "[upx-rootfs] OK   $$FILE  $$BEFORE -> $$AFTER"; \
+				else \
+					echo "[upx-rootfs] SKIP $$FILE （UPX 压缩失败）"; \
+				fi; \
+			done; \
+		done \
+	)
+endef
+ROOTFS_POSTPROCESS_COMMAND += upx_rootfs_compress
+UPX_HOOK_EOF
+    echo "[upx-setup] qualcommax: UPX rootfs 压缩钩子已注入"
+else
+    echo "[upx-setup] qualcommax: 钩子已存在或 image/Makefile 未找到，跳过注入"
+fi
