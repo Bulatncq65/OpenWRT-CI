@@ -458,228 +458,490 @@ if [ -f "$EASYTIER_CORE" ]; then
 fi
 
 
-# ============================================
-# UPX rootfs 压缩钩子 - 方案 C 修复版
-# - BOARD 解析：优先 $WRT_TARGET（最可靠），其次 Config/<cfg>.txt，最后 ./.config
-# - 独立 upx-hook.mk + 在 $(eval $(call BuildImage)) 前 include
-# - 全程诊断日志
-# ============================================
 
-echo "[upx] ============ UPX Hook 诊断开始 ============"
-echo "[upx] WRT_CONFIG          = '${WRT_CONFIG:-<unset>}'"
-echo "[upx] WRT_TARGET          = '${WRT_TARGET:-<unset>}'"
-echo "[upx] WRT_SUBTARGET       = '${WRT_SUBTARGET:-<unset>}'"
-echo "[upx] WRT_BRANCH          = '${WRT_BRANCH:-<unset>}'"
-echo "[upx] GITHUB_WORKSPACE    = '${GITHUB_WORKSPACE:-<unset>}'"
-echo "[upx] PWD(-P)             = '$(pwd -P)'"
-echo "[upx] ./.config exists?   = $([ -f ./.config ] && echo YES || echo NO)"
-echo "[upx] \$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt exists? = $([ -f "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" ] && echo YES || echo NO)"
-echo "[upx] UPX_ENABLED_CONFIGS = '${UPX_ENABLED_CONFIGS:-<unset>}'"
-echo "[upx] UPX_SKIP_KEYWORDS   = '${UPX_SKIP_KEYWORDS:-<unset>}'"
-echo "[upx] UPX_FORCE_ENABLE    = '${UPX_FORCE_ENABLE:-<unset>}'"
 
-ensure_upx_on_builder() {
-    echo "[upx] --- 构建机 UPX / readelf ---"
-    if ! command -v upx >/dev/null 2>&1 && ! command -v upx-ucl >/dev/null 2>&1; then
-        sudo apt-get update -qq >/dev/null 2>&1 || true
-        sudo apt-get install -y -qq upx-ucl >/dev/null 2>&1 || \
-            sudo apt-get install -y -qq upx >/dev/null 2>&1 || true
-    fi
-    if command -v upx >/dev/null 2>&1; then
-        echo "[upx] upx = $(upx --version 2>&1 | head -n 1 || true)"
-    elif command -v upx-ucl >/dev/null 2>&1; then
-        echo "[upx] upx-ucl = $(upx-ucl --version 2>&1 | head -n 1 || true)"
-    else
-        echo "[upx] 构建机无 upx，稍后将回退 staging_dir"
-    fi
-    command -v readelf >/dev/null 2>&1 && \
-        echo "[upx] readelf = $(readelf --version 2>&1 | head -n 1 || true)" || \
-        echo "[upx] readelf 不可用"
-}
-ensure_upx_on_builder
 
-upx_split_trim_lower() {
-    local raw="$1"
-    local item trimmed
-    local IFS=','
-    for item in $raw; do
-        trimmed=$(printf '%s' "$item" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-        [ -n "$trimmed" ] || continue
-        printf '%s\n' "${trimmed,,}"
-    done
+
+
+
+# ==================== UPX HOOK FULL DIAGNOSTIC + INJECTION BEGIN ====================
+set +e
+
+GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"
+TOPDIR="$PWD"
+UPX_PREP_LOG="$GITHUB_WORKSPACE/build-reports/upx-prepare.log"
+UPX_LOG_ABS="$GITHUB_WORKSPACE/build-reports/upx-hook.log"
+UPX_HOOK_MK="$TOPDIR/upx-hook.mk"
+UPX_ROOTFS_SH="$TOPDIR/upx-rootfs.sh"
+
+mkdir -p "$(dirname "$UPX_PREP_LOG")" 2>/dev/null || true
+: > "$UPX_PREP_LOG" 2>/dev/null || true
+: > "$UPX_LOG_ABS" 2>/dev/null || true
+
+uplog() {
+    printf '%s\n' "$*" | tee -a "$UPX_PREP_LOG" 2>/dev/null || true
 }
 
-UPX_SKIP_KEYWORDS="${UPX_SKIP_KEYWORDS:-x86,rockchip,airoha}"
-UPX_ENABLED_CONFIGS="${UPX_ENABLED_CONFIGS:-}"
-UPX_SHOULD_APPLY=0
-WRT_CONFIG_LC="${WRT_CONFIG,,}"
+uplog_block() {
+    tee -a "$UPX_PREP_LOG" 2>/dev/null || true
+}
 
-echo "[upx] --- 判断是否启用 ---"
-if [ -n "$UPX_ENABLED_CONFIGS" ]; then
-    echo "[upx] 模式: 白名单，列表='$UPX_ENABLED_CONFIGS'"
-    while IFS= read -r PAT; do
-        [ -n "$PAT" ] || continue
-        if [[ "$WRT_CONFIG_LC" == $PAT ]]; then
-            UPX_SHOULD_APPLY=1
-            echo "[upx] 命中白名单 '$PAT'，启用 UPX"
-            break
-        fi
-    done < <(upx_split_trim_lower "$UPX_ENABLED_CONFIGS")
-    [ "$UPX_SHOULD_APPLY" -eq 0 ] && echo "[upx] 不在白名单，跳过"
-else
-    echo "[upx] 模式: 默认排除法，跳过关键词='$UPX_SKIP_KEYWORDS'"
-    UPX_SHOULD_APPLY=1
-    while IFS= read -r KW; do
-        [ -n "$KW" ] || continue
-        if [[ "$WRT_CONFIG_LC" == *"$KW"* ]]; then
-            UPX_SHOULD_APPLY=0
-            echo "[upx] 命中跳过关键词 '$KW'，跳过"
-            break
-        fi
-    done < <(upx_split_trim_lower "$UPX_SKIP_KEYWORDS")
-    [ "$UPX_SHOULD_APPLY" -eq 1 ] && echo "[upx] 未命中跳过关键词，启用 UPX"
+uplog "==================== 新 UPX Hook 诊断开始 ===================="
+uplog "PWD=$PWD"
+uplog "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+uplog "TOPDIR=$TOPDIR"
+uplog "WRT_TARGET=${WRT_TARGET:-<unset>}"
+uplog "WRT_SUBTARGET=${WRT_SUBTARGET:-<unset>}"
+uplog "WRT_CONFIG=${WRT_CONFIG:-<unset>}"
+uplog "UPX_PREP_LOG=$UPX_PREP_LOG"
+uplog "UPX_LOG_ABS=$UPX_LOG_ABS"
+uplog "UPX_HOOK_MK=$UPX_HOOK_MK"
+uplog "UPX_ROOTFS_SH=$UPX_ROOTFS_SH"
+
+if [ ! -f rules.mk ]; then
+    uplog "WARNING: 当前目录没有 rules.mk，可能不在 OpenWrt 源码根目录"
 fi
 
-if [[ "${UPX_FORCE_ENABLE,,}" == "true" ]]; then
-    UPX_SHOULD_APPLY=1
-    echo "[upx] UPX_FORCE_ENABLE=true，强制启用"
-fi
+TARGET="${WRT_TARGET:-qualcommax}"
+SUBTARGET="${WRT_SUBTARGET:-ipq807x}"
+TARGET_IMAGE_DIR="target/linux/$TARGET/image"
+TARGET_IMAGE_MAKEFILE="$TARGET_IMAGE_DIR/Makefile"
+TARGET_SUBTARGET_MK="$TARGET_IMAGE_DIR/$SUBTARGET.mk"
 
-echo "[upx] UPX_SHOULD_APPLY=$UPX_SHOULD_APPLY"
+uplog "TARGET=$TARGET"
+uplog "SUBTARGET=$SUBTARGET"
+uplog "TARGET_IMAGE_DIR=$TARGET_IMAGE_DIR"
+uplog "TARGET_IMAGE_MAKEFILE=$TARGET_IMAGE_MAKEFILE"
+uplog "TARGET_SUBTARGET_MK=$TARGET_SUBTARGET_MK"
 
-if [ "$UPX_SHOULD_APPLY" -ne 1 ]; then
-    echo "[upx] 跳过注入"
-    echo "[upx] ============ UPX Hook 诊断结束 ============"
-else
-    # ---------- BOARD 解析 ----------
-    # 优先级：$WRT_TARGET > Config/<cfg>.txt > ./.config
-    UPX_CURRENT_BOARD="${WRT_TARGET:-}"
-    UPX_BOARD_SRC="WRT_TARGET"
-    if [ -z "$UPX_CURRENT_BOARD" ] && [ -f "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" ]; then
-        UPX_CURRENT_BOARD=$(grep -m 1 -oP '^CONFIG_TARGET_\K[^=]+(?==y)' \
-            "$GITHUB_WORKSPACE/Config/$WRT_CONFIG.txt" 2>/dev/null || echo "")
-        UPX_BOARD_SRC="Config/$WRT_CONFIG.txt"
-    fi
-    if [ -z "$UPX_CURRENT_BOARD" ] && [ -f ./.config ]; then
-        UPX_CURRENT_BOARD=$(grep -m 1 -oP '^CONFIG_TARGET_\K[^=]+(?==y)' \
-            ./.config 2>/dev/null || echo "")
-        UPX_BOARD_SRC=".config"
-    fi
-    echo "[upx] UPX_CURRENT_BOARD='$UPX_CURRENT_BOARD' (来源: $UPX_BOARD_SRC)"
+uplog "-------------------- 环境变量筛选打印 --------------------"
+{
+    env | grep -v -E 'TOKEN|PASSWORD|SECRET|AUTH' | sort
+} 2>&1 | uplog_block || true
 
-    if [ -z "$UPX_CURRENT_BOARD" ]; then
-        echo "[upx] FATAL: BOARD 解析失败"
-        echo "[upx] --- 兜底诊断："
-        echo "[upx]   ls Config/*.txt (前 5 个):"
-        ls "$GITHUB_WORKSPACE/Config/"*.txt 2>/dev/null | head -5 || true
-        echo "[upx]   Config 目录顶层:"
-        ls "$GITHUB_WORKSPACE/Config/" 2>/dev/null | head -10 || true
+uplog "-------------------- 工具版本探测 --------------------"
+for cmd in upx readelf file timeout stat find grep awk sed make sha256sum tar uname nproc df du; do
+    uplog "command -v $cmd: $(command -v "$cmd" 2>&1 || true)"
+done
+
+{
+    echo "===== uname -a ====="; uname -a
+    echo "===== nproc ====="; nproc
+    echo "===== upx --version ====="; upx --version 2>&1 || true
+    echo "===== readelf --version ====="; readelf --version 2>&1 | head -5 || true
+    echo "===== file --version ====="; file --version 2>&1 | head -5 || true
+    echo "===== timeout --version ====="; timeout --version 2>&1 | head -5 || true
+    echo "===== stat --version ====="; stat --version 2>&1 | head -5 || true
+    echo "===== find --version ====="; find --version 2>&1 | head -5 || true
+    echo "===== grep --version ====="; grep --version 2>&1 | head -5 || true
+    echo "===== make --version ====="; make --version 2>&1 | head -5 || true
+    echo "===== df -h ====="; df -h
+} 2>&1 | uplog_block || true
+
+uplog "-------------------- 生成 upx-rootfs.sh --------------------"
+cat > "$UPX_ROOTFS_SH" <<'UPX_ROOTFS_EOF'
+#!/bin/sh
+set +e
+
+LOG="${UPX_LOG:-/tmp/upx-rootfs.log}"
+ROOTFS="${ROOTFS:-$1}"
+ARCH="${ARCH:-unknown}"
+BOARD="${BOARD:-unknown}"
+SUBTARGET="${SUBTARGET:-unknown}"
+TARGET="${TARGET:-unknown}"
+UPX_HOOK_ENABLE="${UPX_HOOK_ENABLE:-0}"
+
+mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
+
+log() {
+    _msg="$*"
+    printf '%s [upx-rootfs] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$_msg" >> "$LOG" 2>&1 || true
+    printf '[upx-rootfs] %s\n' "$_msg" >&2 || true
+}
+
+TOTAL=0
+CAND_COUNT=0
+COMPRESSED=0
+SKIPPED=0
+FAILED=0
+TOTAL_SAVED=0
+
+skip() {
+    SKIPPED=$((SKIPPED + 1))
+    log "SKIP rel=$rel reason=$*"
+}
+
+fail() {
+    FAILED=$((FAILED + 1))
+    log "FAIL rel=$rel reason=$*"
+}
+
+run_upx_capture() {
+    _out="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 180 upx "$@" > "$_out" 2>&1
     else
-        # ---------- 生成 upx-hook.mk ----------
-        UPX_HOOK_FILE="$(pwd -P)/upx-hook.mk"
-        echo "[upx] --- 生成 $UPX_HOOK_FILE ---"
-        cat > "$UPX_HOOK_FILE" << 'UPX_HOOK_EOF'
-# upx-hook.mk - 由 Handles.sh 自动生成
-ifndef UPX_ROOTFS_HOOK_INCLUDED
-UPX_ROOTFS_HOOK_INCLUDED := 1
+        upx "$@" > "$_out" 2>&1
+    fi
+    _rc=$?
+    cat "$_out" >> "$LOG" 2>/dev/null || true
+    cat "$_out" >&2 2>/dev/null || true
+    rm -f "$_out"
+    return $_rc
+}
 
-define Build/upx_rootfs_compress
-	( \
-		echo "[upx-rootfs] invoked arg1='$(1)' ARCH='$(ARCH)'"; \
-		ROOTFS_DIR=""; \
-		for CAND in "$(1)" "$(TARGET_DIR)" "$(IMAGE_ROOTFS)"; do \
-			if [ -n "$$CAND" ] && [ -d "$$CAND" ]; then ROOTFS_DIR="$$CAND"; break; fi; \
-		done; \
-		if [ -z "$$ROOTFS_DIR" ]; then echo "[upx-rootfs] FATAL: no rootfs dir"; exit 0; fi; \
-		echo "[upx-rootfs] ROOTFS_DIR=$$ROOTFS_DIR"; \
-		case "$(ARCH)" in \
-			mips64*|riscv64*|loongarch64*) \
-				echo "[upx-rootfs] skip arch $(ARCH)"; exit 0 ;; \
-		esac; \
-		UPX_BIN=""; \
-		for CAND in "$(STAGING_DIR_HOST)/bin/upx" "$(STAGING_DIR_HOST)/bin/upx-ucl" upx upx-ucl; do \
-			if command -v "$$CAND" >/dev/null 2>&1 || [ -x "$$CAND" ]; then UPX_BIN="$$CAND"; break; fi; \
-		done; \
-		if [ -z "$$UPX_BIN" ]; then echo "[upx-rootfs] no upx binary"; exit 0; fi; \
-		echo "[upx-rootfs] UPX=$$UPX_BIN"; \
-		for NAME in tailscaled sing-box mihomo xray; do \
-			find "$$ROOTFS_DIR" \
-				\( -path "*/bin/*" -o -path "*/sbin/*" -o -path "*/usr/bin/*" -o -path "*/usr/sbin/*" -o -path "*/usr/libexec/*" \) \
-				-type f -name "$$NAME" -print0 2>/dev/null | \
-			while IFS= read -r -d '' FILE; do \
-				file "$$FILE" | grep -q 'ELF.*executable' || continue; \
-				if readelf -S "$$FILE" 2>/dev/null | grep -q '\.UPX'; then \
-					echo "[upx-rootfs] skip $$FILE (upx section)"; continue; \
-				fi; \
-				if grep -q 'UPX!' "$$FILE" 2>/dev/null; then \
-					echo "[upx-rootfs] skip $$FILE (upx magic)"; continue; \
-				fi; \
-				BEFORE=$$(stat -c %s "$$FILE"); \
-				if "$$UPX_BIN" --lzma -9 --no-progress "$$FILE" >/dev/null 2>&1; then \
-					AFTER=$$(stat -c %s "$$FILE"); \
-					echo "[upx-rootfs] OK $$FILE $$BEFORE -> $$AFTER"; \
-				else \
-					echo "[upx-rootfs] FAIL $$FILE"; \
-				fi; \
-			done; \
-		done \
-	)
+log "==================== upx-rootfs start ===================="
+log "pid=$$ pwd=$(pwd)"
+log "ROOTFS=$ROOTFS"
+log "ARCH=$ARCH BOARD=$BOARD SUBTARGET=$SUBTARGET TARGET=$TARGET"
+log "UPX_HOOK_ENABLE=$UPX_HOOK_ENABLE"
+log "LOG=$LOG"
+
+if [ "$UPX_HOOK_ENABLE" != "1" ]; then
+    log "UPX_HOOK_ENABLE != 1，退出"
+    exit 0
+fi
+
+if ! command -v upx >/dev/null 2>&1; then
+    log "FATAL: upx 不存在"
+    exit 0
+fi
+
+if ! command -v readelf >/dev/null 2>&1; then
+    log "WARNING: readelf 不存在"
+fi
+
+if ! command -v file >/dev/null 2>&1; then
+    log "WARNING: file 不存在"
+fi
+
+if [ -z "$ROOTFS" ] || [ ! -d "$ROOTFS" ]; then
+    log "FATAL: ROOTFS 不是目录或为空: [$ROOTFS]"
+    exit 0
+fi
+
+log "rootfs exists: $(ls -ld "$ROOTFS" 2>&1)"
+log "rootfs file count: $(find "$ROOTFS" -xdev -type f 2>/dev/null | wc -l)"
+log "rootfs executable count: $(find "$ROOTFS" -xdev -type f -perm -111 2>/dev/null | wc -l)"
+log "rootfs size: $(du -sh "$ROOTFS" 2>/dev/null | awk '{print $1}')"
+log "df rootfs: $(df -h "$ROOTFS" 2>&1 | tail -1)"
+
+CAND_LIST="${LOG}.candidates"
+find "$ROOTFS" -xdev -type f -perm -111 2>/dev/null | sort > "$CAND_LIST"
+CAND_COUNT=$(wc -l < "$CAND_LIST" 2>/dev/null || echo 0)
+TOTAL=$CAND_COUNT
+log "candidate list saved to $CAND_LIST"
+log "candidate executable files: $CAND_COUNT"
+
+EXPECT_PATTERN=""
+case "$ARCH" in
+    aarch64|arm64) EXPECT_PATTERN="AArch64" ;;
+    arm|armv7|armv8) EXPECT_PATTERN="ARM" ;;
+    x86_64) EXPECT_PATTERN="X86-64" ;;
+    i386|i486|i586|i686) EXPECT_PATTERN="80386" ;;
+    mips|mipsel) EXPECT_PATTERN="MIPS" ;;
+    *) EXPECT_PATTERN="" ;;
+esac
+log "EXPECT_PATTERN=[$EXPECT_PATTERN]"
+
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    rel="${f#$ROOTFS/}"
+
+    case "$rel" in
+        *.ko|*.ko.*|*.so|*.so.*|*.a|*.o|*.la|*.lai)
+            skip "kernel module/shared/static object by suffix"
+            continue
+            ;;
+    esac
+
+    if [ -L "$f" ]; then
+        skip "symlink"
+        continue
+    fi
+
+    if [ ! -f "$f" ]; then
+        skip "not regular file"
+        continue
+    fi
+
+    HL="$(stat -c %h "$f" 2>/dev/null || echo 0)"
+    if [ "$HL" != "1" ]; then
+        skip "hardlink count=$HL"
+        continue
+    fi
+
+    if head -c 2 "$f" 2>/dev/null | grep -aq '^#!'; then
+        skip "script shebang"
+        continue
+    fi
+
+    if grep -aq 'UPX!' "$f" 2>/dev/null; then
+        skip "already UPX compressed"
+        continue
+    fi
+
+    FILE_OUT="$(file -b "$f" 2>/dev/null || true)"
+    case "$FILE_OUT" in
+        *ELF*executable*) ;;
+        *)
+            skip "not ELF executable: $FILE_OUT"
+            continue
+            ;;
+    esac
+    case "$FILE_OUT" in
+        *shared\ object*)
+            skip "ELF shared object: $FILE_OUT"
+            continue
+            ;;
+    esac
+
+    READELF_H="$(readelf -h "$f" 2>/dev/null || true)"
+    MACHINE="$(printf '%s\n' "$READELF_H" | awk -F: '/Machine:/{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
+    TYPE="$(printf '%s\n' "$READELF_H" | awk -F: '/Type:/{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
+    SIZE_BEFORE="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+
+    log "candidate rel=$rel size=$SIZE_BEFORE machine=[$MACHINE] type=[$TYPE] file=[$FILE_OUT]"
+
+    if [ -n "$EXPECT_PATTERN" ]; then
+        case "$MACHINE" in
+            *"$EXPECT_PATTERN"*) ;;
+            *)
+                skip "machine mismatch expected=[$EXPECT_PATTERN] actual=[$MACHINE]"
+                continue
+                ;;
+        esac
+    fi
+
+    TMP="${f}.upx.$$"
+    UPX_OUT="${f}.upxout.$$"
+    if ! cp -p "$f" "$TMP" 2>>"$LOG"; then
+        fail "cp to temp failed"
+        continue
+    fi
+
+    run_upx_capture "$UPX_OUT" -9 -q "$TMP"
+    RC=$?
+    if [ "$RC" -eq 0 ]; then
+        run_upx_capture "$UPX_OUT" -t -q "$TMP"
+        RCT=$?
+        if [ "$RCT" -eq 0 ]; then
+            OLD="$(stat -c %s "$f" 2>/dev/null || echo 0)"
+            NEW="$(stat -c %s "$TMP" 2>/dev/null || echo 0)"
+            if mv -f "$TMP" "$f" 2>>"$LOG"; then
+                COMPRESSED=$((COMPRESSED + 1))
+                TOTAL_SAVED=$((TOTAL_SAVED + OLD - NEW))
+                log "OK rel=$rel old=$OLD new=$NEW saved=$((OLD - NEW))"
+            else
+                rm -f "$TMP"
+                fail "mv temp back failed"
+            fi
+        else
+            rm -f "$TMP"
+            fail "upx -t failed rc=$RCT"
+        fi
+    else
+        rm -f "$TMP"
+        fail "upx -9 failed rc=$RC"
+    fi
+done < "$CAND_LIST"
+
+log "==================== upx-rootfs summary ===================="
+log "SUMMARY total=$TOTAL candidate=$CAND_COUNT compressed=$COMPRESSED skipped=$SKIPPED failed=$FAILED saved=$TOTAL_SAVED"
+log "candidate list: $CAND_LIST"
+log "==================== upx-rootfs end ===================="
+exit 0
+UPX_ROOTFS_EOF
+
+chmod +x "$UPX_ROOTFS_SH" 2>/dev/null || true
+uplog "upx-rootfs.sh 已生成: $(ls -l "$UPX_ROOTFS_SH" 2>&1)"
+
+uplog "-------------------- 生成 upx-hook.mk --------------------"
+cat > "$UPX_HOOK_MK" <<'UPX_HOOK_EOF'
+ifdef UPX_HOOK_INCLUDED
+$(info [upx-mk] WARNING: upx-hook.mk included again)
+else
+UPX_HOOK_INCLUDED := 1
+$(info [upx-mk] first include)
+endif
+
+$(info [upx-mk] ===== include begin =====)
+$(info [upx-mk] time=$(shell date -u +%Y-%m-%dT%H:%M:%SZ))
+$(info [upx-mk] CURDIR=$(CURDIR))
+$(info [upx-mk] TOPDIR=$(TOPDIR))
+$(info [upx-mk] ARCH=$(ARCH) BOARD=$(BOARD) SUBTARGET=$(SUBTARGET))
+$(info [upx-mk] origin ROOTFS_POSTPROCESS_COMMAND=$(origin ROOTFS_POSTPROCESS_COMMAND))
+$(info [upx-mk] ROOTFS_POSTPROCESS_COMMAND_before=[$(ROOTFS_POSTPROCESS_COMMAND)])
+$(info [upx-mk] origin prepare_rootfs=$(origin prepare_rootfs))
+$(info [upx-mk] origin BuildImage=$(origin BuildImage))
+$(info [upx-mk] origin Image/Prepare=$(origin Image/Prepare))
+$(info [upx-mk] origin TARGET_DIR=$(origin TARGET_DIR))
+$(info [upx-mk] origin TARGET_ROOTFS_DIR=$(origin TARGET_ROOTFS_DIR))
+$(info [upx-mk] origin BUILD_DIR=$(origin BUILD_DIR))
+$(info [upx-mk] origin BIN_DIR=$(origin BIN_DIR))
+$(info [upx-mk] origin KDIR=$(origin KDIR))
+$(info [upx-mk] value TARGET_DIR=[$(TARGET_DIR)])
+$(info [upx-mk] value TARGET_ROOTFS_DIR=[$(TARGET_ROOTFS_DIR)])
+$(info [upx-mk] value BUILD_DIR=[$(BUILD_DIR)])
+$(info [upx-mk] value BIN_DIR=[$(BIN_DIR)])
+$(info [upx-mk] value KDIR=[$(KDIR)])
+
+UPX_LOG := __UPX_LOG__
+UPX_ROOTFS_SCRIPT := $(TOPDIR)/upx-rootfs.sh
+UPX_HOOK_ENABLE := 1
+
+define UpXRootfsHook
+@@TAB@@@echo "[upx] hook invoked rootfs=$(1)" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook invoked rootfs=$(1)" >&2; UPX_LOG="$(UPX_LOG)" ROOTFS="$(1)" ARCH="$(ARCH)" BOARD="$(BOARD)" SUBTARGET="$(SUBTARGET)" TARGET="$(TARGET)" UPX_HOOK_ENABLE="$(UPX_HOOK_ENABLE)" sh "$(UPX_ROOTFS_SCRIPT)" >> "$(UPX_LOG)"; rc=$$?; echo "[upx] hook script rc=$$rc" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook script rc=$$rc" >&2; exit 0
 endef
 
-ROOTFS_POSTPROCESS_COMMAND += upx_rootfs_compress
+ifneq ($(filter UpXRootfsHook,$(ROOTFS_POSTPROCESS_COMMAND)),UpXRootfsHook)
+ROOTFS_POSTPROCESS_COMMAND += UpXRootfsHook
+$(info [upx-mk] appended UpXRootfsHook)
+else
+$(info [upx-mk] UpXRootfsHook already in ROOTFS_POSTPROCESS_COMMAND)
 endif
+
+$(info [upx-mk] ROOTFS_POSTPROCESS_COMMAND_after=[$(ROOTFS_POSTPROCESS_COMMAND)])
+$(info [upx-mk] ===== include end =====)
 UPX_HOOK_EOF
-        echo "[upx] upx-hook.mk 大小=$(stat -c %s "$UPX_HOOK_FILE") bytes"
 
-        # ---------- 注入 ----------
-        UPX_IMAGE_DIR="./target/linux/$UPX_CURRENT_BOARD/image"
-        [ -d "$UPX_IMAGE_DIR" ] || UPX_IMAGE_DIR="./target/linux/$UPX_CURRENT_BOARD"
-        echo "[upx] --- 扫描 $UPX_IMAGE_DIR ---"
-        ls -la "$UPX_IMAGE_DIR" 2>/dev/null || true
+sed -i 's/^@@TAB@@/\t/' "$UPX_HOOK_MK" 2>/dev/null || true
+sed -i "s#__UPX_LOG__#$UPX_LOG_ABS#g" "$UPX_HOOK_MK" 2>/dev/null || true
 
-        UPX_INJECTED=0
-        while IFS= read -r MK; do
-            [ -n "$MK" ] || continue
-            echo "[upx] --- $MK ---"
-            if ! grep -q '\$(eval \$(call BuildImage))' "$MK"; then
-                echo "[upx]   无 BuildImage eval，跳过"
-                continue
-            fi
-            if grep -q 'upx-hook.mk' "$MK"; then
-                echo "[upx]   已含 upx-hook.mk include，跳过"
-                continue
-            fi
-            echo "[upx]   注入前 (ROOTFS_POSTPROCESS_COMMAND / BuildImage):"
-            grep -n 'ROOTFS_POSTPROCESS_COMMAND\|eval.*BuildImage' "$MK" || true
+uplog "upx-hook.mk 已生成: $(ls -l "$UPX_HOOK_MK" 2>&1)"
+uplog "-------------------- upx-hook.mk 全文 begin --------------------"
+cat "$UPX_HOOK_MK" 2>&1 | uplog_block || true
+uplog "-------------------- upx-hook.mk 全文 end --------------------"
 
-            sed -i '/\$(eval \$(call BuildImage))/i include $(TOPDIR)/upx-hook.mk' "$MK"
+uplog "-------------------- upx-rootfs.sh 全文 begin --------------------"
+cat "$UPX_ROOTFS_SH" 2>&1 | uplog_block || true
+uplog "-------------------- upx-rootfs.sh 全文 end --------------------"
 
-            echo "[upx]   注入后:"
-            grep -n 'ROOTFS_POSTPROCESS_COMMAND\|upx-hook\|eval.*BuildImage' "$MK" || true
+uplog "-------------------- upx-hook.mk 关键行 --------------------"
+grep -n 'ROOTFS_POSTPROCESS_COMMAND\|UpXRootfsHook\|UPX_HOOK_ENABLE\|UPX_LOG\|UPX_ROOTFS_SCRIPT' "$UPX_HOOK_MK" 2>&1 | uplog_block || true
 
-            UPX_INJECTED=$((UPX_INJECTED + 1))
-        done < <(find "$UPX_IMAGE_DIR" -maxdepth 3 -type f \
-                    \( -name 'Makefile' -o -name '*.mk' \) 2>/dev/null)
+uplog "-------------------- 锚点全局扫描 --------------------"
+{
+    echo "===== BuildImage eval anchors ====="
+    grep -RIn --include='*.mk' -F '$(eval $(call BuildImage))' target/linux/"$TARGET" include 2>&1 || true
+    echo "===== BuildImage definitions ====="
+    grep -RIn --include='*.mk' 'define BuildImage' include 2>&1 || true
+    echo "===== ROOTFS_POSTPROCESS_COMMAND ====="
+    grep -RIn --include='*.mk' 'ROOTFS_POSTPROCESS_COMMAND' include target/linux/"$TARGET" 2>&1 || true
+    echo "===== prepare_rootfs definitions ====="
+    grep -RIn --include='*.mk' 'define prepare_rootfs' include target/linux/"$TARGET" 2>&1 || true
+    echo "===== Image/Prepare ====="
+    grep -RIn --include='*.mk' 'Image/Prepare' include target/linux/"$TARGET" 2>&1 || true
+    echo "===== Package install hooks (head 200) ====="
+    grep -RIn --include='*.mk' -E 'define Package/.*/install' target/linux/"$TARGET" include 2>&1 | head -200 || true
+    echo "===== TARGET_ROOTFS_DIR / TARGET_DIR (head 200) ====="
+    grep -RIn --include='*.mk' 'TARGET_ROOTFS_DIR\|TARGET_DIR' include target/linux/"$TARGET" 2>&1 | head -200 || true
+    echo "===== existing UPX references (head 200) ====="
+    grep -RIn --include='*.mk' -i 'upx' target/linux/"$TARGET" include 2>&1 | head -200 || true
+} 2>&1 | uplog_block || true
 
-        echo "[upx] === 注入文件数量: $UPX_INJECTED ==="
+uplog "-------------------- include/rootfs.mk prepare_rootfs 上下文 --------------------"
+{
+    echo "===== include/rootfs.mk exists ====="
+    ls -l include/rootfs.mk 2>&1 || true
+    echo "===== define prepare_rootfs ====="
+    grep -n -A100 'define prepare_rootfs' include/rootfs.mk 2>&1 || true
+    echo "===== ROOTFS_POSTPROCESS_COMMAND context ====="
+    grep -n -A30 -B30 'ROOTFS_POSTPROCESS_COMMAND' include/rootfs.mk 2>&1 || true
+} 2>&1 | uplog_block || true
 
-        # ---------- 全局诊断 ----------
-        echo "[upx] === 全局 ROOTFS_POSTPROCESS_COMMAND 分布 (前 40 行) ==="
-        grep -rn 'ROOTFS_POSTPROCESS_COMMAND' include/ target/linux/ 2>/dev/null | head -40 || true
+uplog "-------------------- include/image.mk 上下文 --------------------"
+{
+    echo "===== include/image.mk tail -120 ====="
+    tail -120 include/image.mk 2>&1 || true
+    echo "===== define BuildImage ====="
+    grep -n -A40 -B10 'define BuildImage' include/image.mk 2>&1 || true
+    echo "===== ROOTFS_POSTPROCESS_COMMAND context ====="
+    grep -n -A30 -B30 'ROOTFS_POSTPROCESS_COMMAND' include/image.mk 2>&1 || true
+    echo "===== Image/Prepare context ====="
+    grep -n -A30 -B10 'Image/Prepare' include/image.mk 2>&1 || true
+} 2>&1 | uplog_block || true
 
-        echo "[upx] === include/image.mk 中 ROOTFS_POSTPROCESS_COMMAND 定义 ==="
-        grep -n 'ROOTFS_POSTPROCESS_COMMAND' include/image.mk 2>/dev/null || true
+uplog "-------------------- target image 文件列表 --------------------"
+{
+    find "$TARGET_IMAGE_DIR" -maxdepth 2 -type f -print 2>&1 || true
+    echo "===== $TARGET_IMAGE_MAKEFILE ====="
+    sed -n '1,200p' "$TARGET_IMAGE_MAKEFILE" 2>&1 || true
+    echo "===== $TARGET_SUBTARGET_MK head 200 ====="
+    sed -n '1,200p' "$TARGET_SUBTARGET_MK" 2>&1 || true
+} 2>&1 | uplog_block || true
 
-        echo "[upx] === 注入文件后 head -30 校验 ==="
-        for MK in $(find "$UPX_IMAGE_DIR" -maxdepth 3 -type f \
-                     \( -name 'Makefile' -o -name '*.mk' \) 2>/dev/null); do
-            if grep -q 'upx-hook.mk' "$MK" 2>/dev/null; then
-                echo "[upx] --- $MK ---"
-                head -30 "$MK"
-                echo "[upx] ..."
-                tail -30 "$MK"
-            fi
-        done
+inject_before_buildimage() {
+    _file="$1"
+    if [ ! -f "$_file" ]; then
+        uplog "inject: missing $_file"
+        return 1
     fi
-    echo "[upx] ============ UPX Hook 诊断结束 ============"
+    if grep -qF 'include $(TOPDIR)/upx-hook.mk' "$_file"; then
+        uplog "inject: already contains upx-hook.mk in $_file"
+        return 0
+    fi
+    _tmp="$_file.upx.tmp.$$"
+    awk 'BEGIN{done=0} { if (!done && index($0, "$(eval $(call BuildImage))") > 0) { print "include $(TOPDIR)/upx-hook.mk"; done=1 } print } END{ if(!done) exit 1 }' "$_file" > "$_tmp"
+    _rc=$?
+    if [ $_rc -eq 0 ]; then
+        mv -f "$_tmp" "$_file"
+        uplog "inject: success before BuildImage in $_file"
+        return 0
+    else
+        rm -f "$_tmp"
+        uplog "inject: BuildImage anchor not found in $_file"
+        return 1
+    fi
+}
+
+inject_append_include() {
+    _file="$1"
+    if [ ! -f "$_file" ]; then
+        uplog "inject fallback: missing $_file"
+        return 1
+    fi
+    if grep -qF 'include $(TOPDIR)/upx-hook.mk' "$_file"; then
+        uplog "inject fallback: already contains upx-hook.mk in $_file"
+        return 0
+    fi
+    printf '\n# UPX hook fallback\ninclude $(TOPDIR)/upx-hook.mk\n' >> "$_file"
+    uplog "inject fallback: appended include to $_file"
+    return 0
+}
+
+uplog "-------------------- 注入 upx-hook.mk --------------------"
+UPX_INJECTED=0
+if inject_before_buildimage "$TARGET_IMAGE_MAKEFILE"; then
+    UPX_INJECTED=1
+else
+    uplog "主注入点失败，尝试 fallback 到 include/image.mk 末尾"
+    if inject_append_include "include/image.mk"; then
+        UPX_INJECTED=1
+    fi
 fi
+uplog "UPX_INJECTED=$UPX_INJECTED"
+
+uplog "-------------------- 注入后目标文件上下文 --------------------"
+{
+    echo "===== grep upx-hook.mk in $TARGET_IMAGE_MAKEFILE ====="
+    grep -n -B5 -A5 'upx-hook.mk' "$TARGET_IMAGE_MAKEFILE" 2>&1 || true
+    echo "===== grep upx-hook.mk in include/image.mk ====="
+    grep -n -B5 -A5 'upx-hook.mk' include/image.mk 2>&1 || true
+    echo "===== tail -40 $TARGET_IMAGE_MAKEFILE ====="
+    tail -40 "$TARGET_IMAGE_MAKEFILE" 2>&1 || true
+    echo "===== tail -40 include/image.mk ====="
+    tail -40 include/image.mk 2>&1 || true
+} 2>&1 | uplog_block || true
+
+uplog "==================== 新 UPX Hook 诊断结束 ===================="
+uplog "请重点检查:"
+uplog "1) 构建日志里是否出现 [upx-mk] first include / appended UpXRootfsHook"
+uplog "2) 构建日志里是否出现 [upx] hook invoked rootfs=..."
+uplog "3) 构建日志里是否出现 [upx-rootfs] SUMMARY total=... compressed=..."
+uplog "4) 如果没有 hook invoked，说明 ROOTFS_POSTPROCESS_COMMAND 没有执行到 UpXRootfsHook"
+uplog "5) 如果 make 日志没有 [upx-mk]，说明 upx-hook.mk 没有被 include"
+uplog "6) 如果 candidate 全是 SKIP，看 SKIP 的 reason 字段"
+
+true
+# ==================== UPX HOOK FULL DIAGNOSTIC + INJECTION END ====================
