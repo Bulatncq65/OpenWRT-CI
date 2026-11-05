@@ -462,9 +462,7 @@ fi
 
 
 
-
-
-# ==================== UPX HOOK FULL DIAGNOSTIC + INJECTION BEGIN ====================
+# ==================== UPX HOOK EXPLICIT-LIST FULL DIAGNOSTIC + INJECTION BEGIN ====================
 set +e
 
 GITHUB_WORKSPACE="${GITHUB_WORKSPACE:-$PWD}"
@@ -473,6 +471,8 @@ UPX_PREP_LOG="$GITHUB_WORKSPACE/build-reports/upx-prepare.log"
 UPX_LOG_ABS="$GITHUB_WORKSPACE/build-reports/upx-hook.log"
 UPX_HOOK_MK="$TOPDIR/upx-hook.mk"
 UPX_ROOTFS_SH="$TOPDIR/upx-rootfs.sh"
+
+UPX_TARGET_NAMES_DEFAULT="tailscaled sing-box mihomo xray"
 
 mkdir -p "$(dirname "$UPX_PREP_LOG")" 2>/dev/null || true
 : > "$UPX_PREP_LOG" 2>/dev/null || true
@@ -486,7 +486,7 @@ uplog_block() {
     tee -a "$UPX_PREP_LOG" 2>/dev/null || true
 }
 
-uplog "==================== 新 UPX Hook 诊断开始 ===================="
+uplog "==================== UPX Hook 显式清单诊断开始 ===================="
 uplog "PWD=$PWD"
 uplog "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
 uplog "TOPDIR=$TOPDIR"
@@ -497,6 +497,7 @@ uplog "UPX_PREP_LOG=$UPX_PREP_LOG"
 uplog "UPX_LOG_ABS=$UPX_LOG_ABS"
 uplog "UPX_HOOK_MK=$UPX_HOOK_MK"
 uplog "UPX_ROOTFS_SH=$UPX_ROOTFS_SH"
+uplog "UPX_TARGET_NAMES_DEFAULT=$UPX_TARGET_NAMES_DEFAULT"
 
 if [ ! -f rules.mk ]; then
     uplog "WARNING: 当前目录没有 rules.mk，可能不在 OpenWrt 源码根目录"
@@ -520,7 +521,7 @@ uplog "-------------------- 环境变量筛选打印 --------------------"
 } 2>&1 | uplog_block || true
 
 uplog "-------------------- 工具版本探测 --------------------"
-for cmd in upx readelf file timeout stat find grep awk sed make sha256sum tar uname nproc df du; do
+for cmd in upx readelf file timeout stat find grep awk sed make sha256sum tar uname nproc df du readlink; do
     uplog "command -v $cmd: $(command -v "$cmd" 2>&1 || true)"
 done
 
@@ -538,7 +539,7 @@ done
     echo "===== df -h ====="; df -h
 } 2>&1 | uplog_block || true
 
-uplog "-------------------- 生成 upx-rootfs.sh --------------------"
+uplog "-------------------- 生成 upx-rootfs.sh（显式清单版） --------------------"
 cat > "$UPX_ROOTFS_SH" <<'UPX_ROOTFS_EOF'
 #!/bin/sh
 set +e
@@ -550,6 +551,9 @@ BOARD="${BOARD:-unknown}"
 SUBTARGET="${SUBTARGET:-unknown}"
 TARGET="${TARGET:-unknown}"
 UPX_HOOK_ENABLE="${UPX_HOOK_ENABLE:-0}"
+UPX_TARGET_NAMES="${UPX_TARGET_NAMES:-tailscaled sing-box mihomo xray}"
+UPX_SCAN_ALL="${UPX_SCAN_ALL:-0}"
+UPX_DISABLE="${UPX_DISABLE:-0}"
 
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 
@@ -568,12 +572,12 @@ TOTAL_SAVED=0
 
 skip() {
     SKIPPED=$((SKIPPED + 1))
-    log "SKIP rel=$rel reason=$*"
+    log "SKIP rel=$rel name=$NAME reason=$*"
 }
 
 fail() {
     FAILED=$((FAILED + 1))
-    log "FAIL rel=$rel reason=$*"
+    log "FAIL rel=$rel name=$NAME reason=$*"
 }
 
 run_upx_capture() {
@@ -590,12 +594,20 @@ run_upx_capture() {
     return $_rc
 }
 
-log "==================== upx-rootfs start ===================="
+log "==================== upx-rootfs start (explicit list) ===================="
 log "pid=$$ pwd=$(pwd)"
 log "ROOTFS=$ROOTFS"
 log "ARCH=$ARCH BOARD=$BOARD SUBTARGET=$SUBTARGET TARGET=$TARGET"
 log "UPX_HOOK_ENABLE=$UPX_HOOK_ENABLE"
+log "UPX_SCAN_ALL=$UPX_SCAN_ALL"
+log "UPX_DISABLE=$UPX_DISABLE"
+log "UPX_TARGET_NAMES=[$UPX_TARGET_NAMES]"
 log "LOG=$LOG"
+
+if [ "$UPX_DISABLE" = "1" ]; then
+    log "UPX_DISABLE=1，退出"
+    exit 0
+fi
 
 if [ "$UPX_HOOK_ENABLE" != "1" ]; then
     log "UPX_HOOK_ENABLE != 1，退出"
@@ -626,13 +638,6 @@ log "rootfs executable count: $(find "$ROOTFS" -xdev -type f -perm -111 2>/dev/n
 log "rootfs size: $(du -sh "$ROOTFS" 2>/dev/null | awk '{print $1}')"
 log "df rootfs: $(df -h "$ROOTFS" 2>&1 | tail -1)"
 
-CAND_LIST="${LOG}.candidates"
-find "$ROOTFS" -xdev -type f -perm -111 2>/dev/null | sort > "$CAND_LIST"
-CAND_COUNT=$(wc -l < "$CAND_LIST" 2>/dev/null || echo 0)
-TOTAL=$CAND_COUNT
-log "candidate list saved to $CAND_LIST"
-log "candidate executable files: $CAND_COUNT"
-
 EXPECT_PATTERN=""
 case "$ARCH" in
     aarch64|arm64) EXPECT_PATTERN="AArch64" ;;
@@ -644,41 +649,45 @@ case "$ARCH" in
 esac
 log "EXPECT_PATTERN=[$EXPECT_PATTERN]"
 
-while IFS= read -r f; do
-    [ -n "$f" ] || continue
+SEEN_KEYS="$LOG.seen_keys.$$"
+: > "$SEEN_KEYS"
+
+process_one_file() {
+    f="$1"
     rel="${f#$ROOTFS/}"
 
     case "$rel" in
         *.ko|*.ko.*|*.so|*.so.*|*.a|*.o|*.la|*.lai)
             skip "kernel module/shared/static object by suffix"
-            continue
+            return
             ;;
     esac
 
     if [ -L "$f" ]; then
         skip "symlink"
-        continue
+        return
     fi
 
     if [ ! -f "$f" ]; then
         skip "not regular file"
-        continue
+        return
     fi
 
-    HL="$(stat -c %h "$f" 2>/dev/null || echo 0)"
-    if [ "$HL" != "1" ]; then
-        skip "hardlink count=$HL"
-        continue
+    KEY="$(stat -c '%d:%i' "$f" 2>/dev/null || echo "unknown:$(date +%s%N)")"
+    if grep -qx "$KEY" "$SEEN_KEYS" 2>/dev/null; then
+        skip "inode already processed key=$KEY"
+        return
     fi
+    echo "$KEY" >> "$SEEN_KEYS"
 
     if head -c 2 "$f" 2>/dev/null | grep -aq '^#!'; then
         skip "script shebang"
-        continue
+        return
     fi
 
     if grep -aq 'UPX!' "$f" 2>/dev/null; then
         skip "already UPX compressed"
-        continue
+        return
     fi
 
     FILE_OUT="$(file -b "$f" 2>/dev/null || true)"
@@ -686,13 +695,13 @@ while IFS= read -r f; do
         *ELF*executable*) ;;
         *)
             skip "not ELF executable: $FILE_OUT"
-            continue
+            return
             ;;
     esac
     case "$FILE_OUT" in
         *shared\ object*)
             skip "ELF shared object: $FILE_OUT"
-            continue
+            return
             ;;
     esac
 
@@ -701,14 +710,14 @@ while IFS= read -r f; do
     TYPE="$(printf '%s\n' "$READELF_H" | awk -F: '/Type:/{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
     SIZE_BEFORE="$(stat -c %s "$f" 2>/dev/null || echo 0)"
 
-    log "candidate rel=$rel size=$SIZE_BEFORE machine=[$MACHINE] type=[$TYPE] file=[$FILE_OUT]"
+    log "candidate name=$NAME rel=$rel size=$SIZE_BEFORE machine=[$MACHINE] type=[$TYPE] file=[$FILE_OUT]"
 
     if [ -n "$EXPECT_PATTERN" ]; then
         case "$MACHINE" in
             *"$EXPECT_PATTERN"*) ;;
             *)
                 skip "machine mismatch expected=[$EXPECT_PATTERN] actual=[$MACHINE]"
-                continue
+                return
                 ;;
         esac
     fi
@@ -717,7 +726,7 @@ while IFS= read -r f; do
     UPX_OUT="${f}.upxout.$$"
     if ! cp -p "$f" "$TMP" 2>>"$LOG"; then
         fail "cp to temp failed"
-        continue
+        return
     fi
 
     run_upx_capture "$UPX_OUT" -9 -q "$TMP"
@@ -730,8 +739,9 @@ while IFS= read -r f; do
             NEW="$(stat -c %s "$TMP" 2>/dev/null || echo 0)"
             if mv -f "$TMP" "$f" 2>>"$LOG"; then
                 COMPRESSED=$((COMPRESSED + 1))
+                NAME_COMPRESSED=$((NAME_COMPRESSED + 1))
                 TOTAL_SAVED=$((TOTAL_SAVED + OLD - NEW))
-                log "OK rel=$rel old=$OLD new=$NEW saved=$((OLD - NEW))"
+                log "OK name=$NAME rel=$rel old=$OLD new=$NEW saved=$((OLD - NEW))"
             else
                 rm -f "$TMP"
                 fail "mv temp back failed"
@@ -744,11 +754,73 @@ while IFS= read -r f; do
         rm -f "$TMP"
         fail "upx -9 failed rc=$RC"
     fi
-done < "$CAND_LIST"
+}
+
+process_name() {
+    NAME="$1"
+    NAME_COMPRESSED=0
+    NAME_SKIPPED_BEFORE=$SKIPPED
+    NAME_FAILED_BEFORE=$FAILED
+    NAME_TOTAL_BEFORE=$TOTAL
+
+    log "==================== TARGET NAME=$NAME begin ===================="
+    FOUND_LIST="$LOG.found.$NAME.$$"
+    find "$ROOTFS" -xdev -type f -name "$NAME" 2>/dev/null | sort > "$FOUND_LIST"
+    FOUND_COUNT=$(wc -l < "$FOUND_LIST" 2>/dev/null || echo 0)
+    log "TARGET NAME=$NAME found_real_files=$FOUND_COUNT"
+    log "TARGET NAME=$NAME found_list=$FOUND_LIST"
+
+    if [ "$FOUND_COUNT" -eq 0 ]; then
+        log "TARGET NAME=$NAME NOT FOUND as regular file"
+        find "$ROOTFS" -xdev -type l -name "$NAME" 2>/dev/null | while IFS= read -r l; do
+            log "TARGET NAME=$NAME symlink path=$l target=$(readlink "$l" 2>/dev/null || echo '?')"
+        done
+        find "$ROOTFS" -xdev -iname "*$NAME*" 2>/dev/null | head -50 | while IFS= read -r m; do
+            log "TARGET NAME=$NAME approximate_match=$m"
+        done
+        log "NAME_SUMMARY name=$NAME found=0 compressed=0 skipped=0 failed=0 note=not_found"
+        log "==================== TARGET NAME=$NAME end (not found) ===================="
+        return
+    fi
+
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        TOTAL=$((TOTAL + 1))
+        process_one_file "$f"
+    done < "$FOUND_LIST"
+
+    NAME_SKIPPED=$((SKIPPED - NAME_SKIPPED_BEFORE))
+    NAME_FAILED=$((FAILED - NAME_FAILED_BEFORE))
+    NAME_TOTAL=$((TOTAL - NAME_TOTAL_BEFORE))
+    log "NAME_SUMMARY name=$NAME found=$FOUND_COUNT processed=$NAME_TOTAL compressed=$NAME_COMPRESSED skipped=$NAME_SKIPPED failed=$NAME_FAILED"
+    log "==================== TARGET NAME=$NAME end ===================="
+}
+
+for NAME in $UPX_TARGET_NAMES; do
+    process_name "$NAME"
+done
+
+if [ "$UPX_SCAN_ALL" = "1" ]; then
+    log "==================== UPX_SCAN_ALL=1 begin ===================="
+    ALL_LIST="$LOG.all.$$"
+    find "$ROOTFS" -xdev -type f -perm -111 2>/dev/null | sort > "$ALL_LIST"
+    ALL_COUNT=$(wc -l < "$ALL_LIST" 2>/dev/null || echo 0)
+    log "scan_all candidates=$ALL_COUNT list=$ALL_LIST"
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        TOTAL=$((TOTAL + 1))
+        NAME="scan_all"
+        process_one_file "$f"
+    done < "$ALL_LIST"
+    log "==================== UPX_SCAN_ALL=1 end ===================="
+fi
+
+rm -f "$SEEN_KEYS" 2>/dev/null || true
 
 log "==================== upx-rootfs summary ===================="
-log "SUMMARY total=$TOTAL candidate=$CAND_COUNT compressed=$COMPRESSED skipped=$SKIPPED failed=$FAILED saved=$TOTAL_SAVED"
-log "candidate list: $CAND_LIST"
+log "SUMMARY total=$TOTAL compressed=$COMPRESSED skipped=$SKIPPED failed=$FAILED saved=$TOTAL_SAVED"
+log "TARGET_NAMES=[$UPX_TARGET_NAMES]"
+log "SCAN_ALL=$UPX_SCAN_ALL"
 log "==================== upx-rootfs end ===================="
 exit 0
 UPX_ROOTFS_EOF
@@ -756,7 +828,7 @@ UPX_ROOTFS_EOF
 chmod +x "$UPX_ROOTFS_SH" 2>/dev/null || true
 uplog "upx-rootfs.sh 已生成: $(ls -l "$UPX_ROOTFS_SH" 2>&1)"
 
-uplog "-------------------- 生成 upx-hook.mk --------------------"
+uplog "-------------------- 生成 upx-hook.mk（显式清单版） --------------------"
 cat > "$UPX_HOOK_MK" <<'UPX_HOOK_EOF'
 ifdef UPX_HOOK_INCLUDED
 $(info [upx-mk] WARNING: upx-hook.mk included again)
@@ -775,11 +847,6 @@ $(info [upx-mk] ROOTFS_POSTPROCESS_COMMAND_before=[$(ROOTFS_POSTPROCESS_COMMAND)
 $(info [upx-mk] origin prepare_rootfs=$(origin prepare_rootfs))
 $(info [upx-mk] origin BuildImage=$(origin BuildImage))
 $(info [upx-mk] origin Image/Prepare=$(origin Image/Prepare))
-$(info [upx-mk] origin TARGET_DIR=$(origin TARGET_DIR))
-$(info [upx-mk] origin TARGET_ROOTFS_DIR=$(origin TARGET_ROOTFS_DIR))
-$(info [upx-mk] origin BUILD_DIR=$(origin BUILD_DIR))
-$(info [upx-mk] origin BIN_DIR=$(origin BIN_DIR))
-$(info [upx-mk] origin KDIR=$(origin KDIR))
 $(info [upx-mk] value TARGET_DIR=[$(TARGET_DIR)])
 $(info [upx-mk] value TARGET_ROOTFS_DIR=[$(TARGET_ROOTFS_DIR)])
 $(info [upx-mk] value BUILD_DIR=[$(BUILD_DIR)])
@@ -789,9 +856,13 @@ $(info [upx-mk] value KDIR=[$(KDIR)])
 UPX_LOG := __UPX_LOG__
 UPX_ROOTFS_SCRIPT := $(TOPDIR)/upx-rootfs.sh
 UPX_HOOK_ENABLE := 1
+UPX_SCAN_ALL := 0
+UPX_DISABLE := 0
+UPX_TARGET_NAMES := tailscaled sing-box mihomo xray
+$(info [upx-mk] UPX_TARGET_NAMES=[$(UPX_TARGET_NAMES)])
 
 define UpXRootfsHook
-@@TAB@@@echo "[upx] hook invoked rootfs=$(1)" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook invoked rootfs=$(1)" >&2; UPX_LOG="$(UPX_LOG)" ROOTFS="$(1)" ARCH="$(ARCH)" BOARD="$(BOARD)" SUBTARGET="$(SUBTARGET)" TARGET="$(TARGET)" UPX_HOOK_ENABLE="$(UPX_HOOK_ENABLE)" sh "$(UPX_ROOTFS_SCRIPT)" >> "$(UPX_LOG)"; rc=$$?; echo "[upx] hook script rc=$$rc" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook script rc=$$rc" >&2; exit 0
+@@TAB@@@echo "[upx] hook invoked rootfs=$(1)" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook invoked rootfs=$(1)" >&2; UPX_LOG="$(UPX_LOG)" ROOTFS="$(1)" ARCH="$(ARCH)" BOARD="$(BOARD)" SUBTARGET="$(SUBTARGET)" TARGET="$(TARGET)" UPX_HOOK_ENABLE="$(UPX_HOOK_ENABLE)" UPX_SCAN_ALL="$(UPX_SCAN_ALL)" UPX_DISABLE="$(UPX_DISABLE)" UPX_TARGET_NAMES="$(UPX_TARGET_NAMES)" sh "$(UPX_ROOTFS_SCRIPT)" >> "$(UPX_LOG)"; rc=$$?; echo "[upx] hook script rc=$$rc" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook script rc=$$rc" >&2; exit 0
 endef
 
 ifneq ($(filter UpXRootfsHook,$(ROOTFS_POSTPROCESS_COMMAND)),UpXRootfsHook)
@@ -805,8 +876,9 @@ $(info [upx-mk] ROOTFS_POSTPROCESS_COMMAND_after=[$(ROOTFS_POSTPROCESS_COMMAND)]
 $(info [upx-mk] ===== include end =====)
 UPX_HOOK_EOF
 
-sed -i 's/^@@TAB@@/\t/' "$UPX_HOOK_MK" 2>/dev/null || true
-sed -i "s#__UPX_LOG__#$UPX_LOG_ABS#g" "$UPX_HOOK_MK" 2>/dev/null || true
+TAB_CHAR="$(printf '\t')"
+awk -v tab="$TAB_CHAR" '{ if (substr($0,1,7)=="@TAB@@") print tab substr($0,8); else print }' "$UPX_HOOK_MK" > "$UPX_HOOK_MK.tmp" && mv -f "$UPX_HOOK_MK.tmp" "$UPX_HOOK_MK"
+awk -v log="$UPX_LOG_ABS" '{ gsub(/__UPX_LOG__/, log); print }' "$UPX_HOOK_MK" > "$UPX_HOOK_MK.tmp" && mv -f "$UPX_HOOK_MK.tmp" "$UPX_HOOK_MK"
 
 uplog "upx-hook.mk 已生成: $(ls -l "$UPX_HOOK_MK" 2>&1)"
 uplog "-------------------- upx-hook.mk 全文 begin --------------------"
@@ -818,7 +890,7 @@ cat "$UPX_ROOTFS_SH" 2>&1 | uplog_block || true
 uplog "-------------------- upx-rootfs.sh 全文 end --------------------"
 
 uplog "-------------------- upx-hook.mk 关键行 --------------------"
-grep -n 'ROOTFS_POSTPROCESS_COMMAND\|UpXRootfsHook\|UPX_HOOK_ENABLE\|UPX_LOG\|UPX_ROOTFS_SCRIPT' "$UPX_HOOK_MK" 2>&1 | uplog_block || true
+grep -n 'ROOTFS_POSTPROCESS_COMMAND\|UpXRootfsHook\|UPX_HOOK_ENABLE\|UPX_LOG\|UPX_ROOTFS_SCRIPT\|UPX_TARGET_NAMES\|UPX_SCAN_ALL\|UPX_DISABLE' "$UPX_HOOK_MK" 2>&1 | uplog_block || true
 
 uplog "-------------------- 锚点全局扫描 --------------------"
 {
@@ -934,14 +1006,18 @@ uplog "-------------------- 注入后目标文件上下文 --------------------"
     tail -40 include/image.mk 2>&1 || true
 } 2>&1 | uplog_block || true
 
-uplog "==================== 新 UPX Hook 诊断结束 ===================="
-uplog "请重点检查:"
-uplog "1) 构建日志里是否出现 [upx-mk] first include / appended UpXRootfsHook"
-uplog "2) 构建日志里是否出现 [upx] hook invoked rootfs=..."
-uplog "3) 构建日志里是否出现 [upx-rootfs] SUMMARY total=... compressed=..."
-uplog "4) 如果没有 hook invoked，说明 ROOTFS_POSTPROCESS_COMMAND 没有执行到 UpXRootfsHook"
-uplog "5) 如果 make 日志没有 [upx-mk]，说明 upx-hook.mk 没有被 include"
-uplog "6) 如果 candidate 全是 SKIP，看 SKIP 的 reason 字段"
+uplog "==================== UPX Hook 显式清单诊断结束 ===================="
+uplog "重点看 CI 日志里这些标记:"
+uplog "1) [upx-mk] first include / appended UpXRootfsHook"
+uplog "2) [upx-mk] UPX_TARGET_NAMES=[tailscaled sing-box mihomo xray]"
+uplog "3) [upx] hook invoked rootfs=..."
+uplog "4) [upx-rootfs] TARGET NAME=tailscaled begin ... found_real_files=..."
+uplog "5) [upx-rootfs] TARGET NAME=... NOT FOUND as regular file / approximate_match=..."
+uplog "6) [upx-rootfs] candidate name=... rel=... machine=..."
+uplog "7) [upx-rootfs] OK name=... rel=... old=... new=... saved=..."
+uplog "8) [upx-rootfs] SKIP/FAIL name=... rel=... reason=..."
+uplog "9) [upx-rootfs] NAME_SUMMARY name=... found=... compressed=... skipped=... failed=..."
+uplog "10) [upx-rootfs] SUMMARY total=... compressed=... skipped=... failed=... saved=..."
 
 true
-# ==================== UPX HOOK FULL DIAGNOSTIC + INJECTION END ====================
+# ==================== UPX HOOK EXPLICIT-LIST FULL DIAGNOSTIC + INJECTION END ====================
