@@ -473,9 +473,7 @@ UPX_ROOTFS_SH="$TOPDIR/upx-rootfs.sh"
 
 # 可自行精简，例如: UPX_TARGET_BINS="tailscaled,sing-box,mihomo,xray"
 UPX_TARGET_BINS="${UPX_TARGET_BINS:-tailscaled,sing-box,mihomo,xray,docker,dockerd}"
-# 空 = 全启用；非空 = 只有 WRT_CONFIG 在列表里才启用
 UPX_ENABLED_CONFIGS="${UPX_ENABLED_CONFIGS:-}"
-# 命中 WRT_CONFIG/WRT_TARGET/WRT_SUBTARGET/BOARD 字符串则跳过
 UPX_SKIP_KEYWORDS="${UPX_SKIP_KEYWORDS:-x86,rockchip,airoha}"
 UPX_FORCE_ENABLE="${UPX_FORCE_ENABLE:-0}"
 UPX_COMPRESS_ALL="${UPX_COMPRESS_ALL:-0}"
@@ -486,10 +484,7 @@ mkdir -p "$(dirname "$UPX_PREP_LOG")" 2>/dev/null || true
 
 uplog() { printf '%s\n' "$*" | tee -a "$UPX_PREP_LOG" 2>/dev/null || true; }
 uplog_block() { tee -a "$UPX_PREP_LOG" 2>/dev/null || true; }
-
-sed_escape() {
-    printf '%s' "$1" | sed -e 's/[\\&#]/\\&/g'
-}
+sed_escape() { printf '%s' "$1" | sed -e 's/[\\&#]/\\&/g'; }
 
 uplog "==================== UPX Hook 诊断+注入开始 ===================="
 uplog "PWD=$PWD"
@@ -949,6 +944,7 @@ inject_before_buildimage() {
     fi
 }
 
+# 修正后的 inject_prepare_rootfs 函数，使用 grep 灵活匹配
 inject_prepare_rootfs() {
     _file="include/rootfs.mk"
     if [ ! -f "$_file" ]; then
@@ -959,30 +955,17 @@ inject_prepare_rootfs() {
         uplog "inject prepare_rootfs: already contains UpXRootfsHook"
         return 0
     fi
-    _tmp="$_file.upx.tmp.$$"
-    awk '
-        BEGIN{done=0}
-        {
-            if (!done && index($0, "$(call mklibs,$(1))") > 0) {
-                print
-                print "\t$(call UpXRootfsHook,$(1))"
-                done=1
-                next
-            }
-            print
-        }
-        END{ if(!done) exit 1 }
-    ' "$_file" > "$_tmp"
-    _rc=$?
-    if [ $_rc -eq 0 ]; then
-        mv -f "$_tmp" "$_file"
-        uplog "inject prepare_rootfs: success after mklibs in $_file"
-        return 0
-    else
-        rm -f "$_tmp"
+    # 使用 grep -n 查找行号，容忍行首的制表符或空格
+    _line_num=$(grep -n '$(call mklibs,$(1))' "$_file" | head -1 | cut -d: -f1)
+    if [ -z "$_line_num" ]; then
         uplog "inject prepare_rootfs: mklibs anchor not found in $_file"
         return 1
     fi
+    # 在目标行后插入 hook 调用
+    sed -i "${_line_num}a\\
+\t\$(call UpXRootfsHook,\$(1))" "$_file"
+    uplog "inject prepare_rootfs: success after mklibs (line $_line_num) in $_file"
+    return 0
 }
 
 uplog "-------------------- 注入 upx-hook.mk 到 target image Makefile --------------------"
@@ -1016,23 +999,19 @@ uplog "-------------------- 注入后 include/rootfs.mk prepare_rootfs 上下文
     grep -n -A80 'define prepare_rootfs' include/rootfs.mk 2>&1 | head -80 || true
 } 2>&1 | uplog_block || true
 
-uplog "-------------------- 全局锚点扫描（精简） --------------------"
+uplog "-------------------- 全局锚点扫描（增强版） --------------------"
 {
-    echo "===== BuildImage eval anchors (all target/linux/*/image/Makefile) ====="
-    grep -RIn --include=Makefile -F '$(eval $(call BuildImage))' target/linux/*/image/Makefile 2>&1 || true
-    echo "===== prepare_rootfs definitions ====="
-    grep -RIn --include='*.mk' 'define prepare_rootfs' include target/linux 2>&1 || true
-    echo "===== mklibs in prepare_rootfs ====="
-    grep -RIn --include='*.mk' 'call mklibs' include target/linux 2>&1 || true
-    echo "===== ROOTFS_POSTPROCESS_COMMAND ====="
-    grep -RIn --include='*.mk' 'ROOTFS_POSTPROCESS_COMMAND' include target/linux 2>&1 || true
-    echo "===== Image/Prepare ====="
-    grep -RIn --include='*.mk' 'Image/Prepare' include target/linux 2>&1 || true
+    echo "===== Full anchor scan for prepare_rootfs context ====="
+    grep -n -A30 'define prepare_rootfs' include/rootfs.mk | head -40
+    echo "===== All calls to prepare_rootfs ====="
+    grep -RIn --include='*.mk' 'call prepare_rootfs' . 2>/dev/null | head -20
+    echo "===== All calls to opkg in package/Makefile ====="
+    grep -n 'opkg\|prepare_rootfs' package/Makefile 2>/dev/null
 } 2>&1 | uplog_block || true
 
 uplog "==================== UPX Hook 诊断+注入结束 ===================="
 uplog "重点检查:"
-uplog "1) make[3] -C target/linux install 后是否出现 [upx-mk] ===== file parsed ====="
+uplog "1) make[2] package/install 后是否出现 [upx-mk] ===== file parsed ====="
 uplog "2) 是否出现 [upx-mk] defining UpXRootfsHook done"
 uplog "3) 是否出现 [upx] hook invoked rootfs=..."
 uplog "4) [upx-rootfs] UPX_TARGET_BINS / lookup bin=... standard=HIT/MISS"
