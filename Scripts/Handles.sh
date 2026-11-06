@@ -461,6 +461,7 @@ fi
 
 
 
+
 # ==================== UPX HOOK DIAGNOSTIC + INJECTION BEGIN ====================
 set +e
 
@@ -471,7 +472,6 @@ UPX_LOG_ABS="$GITHUB_WORKSPACE/build-reports/upx-hook.log"
 UPX_HOOK_MK="$TOPDIR/upx-hook.mk"
 UPX_ROOTFS_SH="$TOPDIR/upx-rootfs.sh"
 
-# 可自行精简，例如: UPX_TARGET_BINS="tailscaled,sing-box,mihomo,xray"
 UPX_TARGET_BINS="${UPX_TARGET_BINS:-tailscaled,sing-box,mihomo,xray,docker,dockerd}"
 UPX_ENABLED_CONFIGS="${UPX_ENABLED_CONFIGS:-}"
 UPX_SKIP_KEYWORDS="${UPX_SKIP_KEYWORDS:-x86,rockchip,airoha}"
@@ -517,7 +517,6 @@ done
 
 uplog "-------------------- 自动探测注入候选 --------------------"
 CANDIDATE_IMAGE_MAKEFILES=""
-
 if [ -n "${WRT_TARGET:-}" ]; then
     _pref="target/linux/${WRT_TARGET}/image/Makefile"
     if [ -f "$_pref" ]; then
@@ -527,24 +526,20 @@ if [ -n "${WRT_TARGET:-}" ]; then
         uplog "WARNING: WRT_TARGET=${WRT_TARGET} 但 $_pref 不存在，改为全局探测"
     fi
 fi
-
 if [ -z "$CANDIDATE_IMAGE_MAKEFILES" ]; then
     CANDIDATE_IMAGE_MAKEFILES="$(grep -RIl --include=Makefile -F '$(eval $(call BuildImage))' target/linux/*/image/Makefile 2>/dev/null | sort -u)"
     uplog "全局探测结果:"
     printf '%s\n' "$CANDIDATE_IMAGE_MAKEFILES" 2>&1 | uplog_block || true
 fi
-
 if [ -z "$CANDIDATE_IMAGE_MAKEFILES" ]; then
     uplog "WARNING: 没有找到任何含 '$(eval $(call BuildImage))' 的 target/linux/*/image/Makefile"
 fi
-
 uplog "CANDIDATE_IMAGE_MAKEFILES=$CANDIDATE_IMAGE_MAKEFILES"
 
 uplog "-------------------- 计算 UPX_SHOULD_APPLY --------------------"
 UPX_SHOULD_APPLY=0
 UPX_REASON=""
 _BOARD_STR="$(echo "${WRT_TARGET:-} ${WRT_SUBTARGET:-} ${WRT_CONFIG:-} ${BOARD:-}" | tr 'A-Z' 'a-z')"
-
 if [ "$UPX_FORCE_ENABLE" = "1" ]; then
     UPX_SHOULD_APPLY=1
     UPX_REASON="forced by UPX_FORCE_ENABLE=1"
@@ -717,7 +712,6 @@ else
     sort -u "$PATHS_TMP" -o "$PATHS_TMP"
 fi
 
-# 生成 size<TAB>path 并降序
 while IFS= read -r _p; do
     [ -n "$_p" ] || continue
     _s="$(stat -c %s "$_p" 2>/dev/null || echo 0)"
@@ -729,7 +723,6 @@ TOTAL=$CAND_COUNT
 log "path list saved to $PATHS_TMP"
 log "candidate list saved to $CAND_LIST"
 log "candidate files: $CAND_COUNT"
-
 log "===== 候选列表（按大小降序）====="
 while IFS="$(printf '\t')" read -r _s _p; do
     [ -n "$_p" ] || continue
@@ -763,12 +756,10 @@ while IFS="$(printf '\t')" read -r SIZE_BEFORE f; do
         skip "symlink"
         continue
     fi
-
     if [ ! -f "$f" ]; then
         skip "not regular file"
         continue
     fi
-
     if ! in_whitelist "$base"; then
         skip "not in UPX_TARGET_BINS"
         continue
@@ -783,7 +774,6 @@ while IFS="$(printf '\t')" read -r SIZE_BEFORE f; do
         skip "script shebang"
         continue
     fi
-
     if grep -aq 'UPX!' "$f" 2>/dev/null; then
         skip "already UPX compressed"
         continue
@@ -807,7 +797,6 @@ while IFS="$(printf '\t')" read -r SIZE_BEFORE f; do
     READELF_H="$(readelf -h "$f" 2>/dev/null || true)"
     MACHINE="$(printf '%s\n' "$READELF_H" | awk -F: '/Machine:/{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
     TYPE="$(printf '%s\n' "$READELF_H" | awk -F: '/Type:/{gsub(/^[ \t]+/,"",$2); print $2; exit}')"
-
     log "candidate rel=$rel size=$SIZE_BEFORE machine=[$MACHINE] type=[$TYPE] file=[$FILE_OUT]"
 
     if [ -n "$EXPECT_PATTERN" ]; then
@@ -897,7 +886,13 @@ $(info [upx-mk] UPX_ROOTFS_SCRIPT=$(UPX_ROOTFS_SCRIPT))
 $(info [upx-mk] UPX_LOG=$(UPX_LOG))
 
 define UpXRootfsHook
-@@TAB@@@echo "[upx] hook invoked rootfs=$(1)" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook invoked rootfs=$(1)" >&2; UPX_LOG="$(UPX_LOG)" ROOTFS="$(1)" ARCH="$(ARCH)" BOARD="$(BOARD)" SUBTARGET="$(SUBTARGET)" TARGET="$(TARGET)" UPX_HOOK_ENABLE="$(UPX_HOOK_ENABLE)" sh "$(UPX_ROOTFS_SCRIPT)"; rc=$$?; echo "[upx] hook script rc=$$rc" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook script rc=$$rc" >&2
+@@TAB@@@echo "[upx] hook invoked rootfs=$(1)" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook invoked rootfs=$(1)" >&2; \
+@@TAB@@UPX_LOG="$(UPX_LOG)" ROOTFS="$(1)" ARCH="$(ARCH)" BOARD="$(BOARD)" SUBTARGET="$(SUBTARGET)" TARGET="$(TARGET)" UPX_HOOK_ENABLE="$(UPX_HOOK_ENABLE)" sh "$(UPX_ROOTFS_SCRIPT)"; \
+@@TAB@@if [ -n "$(TARGET_DIR)" ] && [ "$(TARGET_DIR)" != "$(1)" ]; then \
+@@TAB@@  echo "[upx] also compressing TARGET_DIR=$(TARGET_DIR)" >> "$(UPX_LOG)" 2>&1; echo "[upx] also compressing TARGET_DIR=$(TARGET_DIR)" >&2; \
+@@TAB@@  UPX_LOG="$(UPX_LOG)" ROOTFS="$(TARGET_DIR)" ARCH="$(ARCH)" BOARD="$(BOARD)" SUBTARGET="$(SUBTARGET)" TARGET="$(TARGET)" UPX_HOOK_ENABLE="$(UPX_HOOK_ENABLE)" sh "$(UPX_ROOTFS_SCRIPT)"; \
+@@TAB@@fi; \
+@@TAB@@rc=$$?; echo "[upx] hook script rc=$$rc" >> "$(UPX_LOG)" 2>&1; echo "[upx] hook script rc=$$rc" >&2
 endef
 
 $(info [upx-mk] defining UpXRootfsHook done)
@@ -918,7 +913,52 @@ cat "$UPX_ROOTFS_SH" 2>&1 | uplog_block || true
 uplog "-------------------- upx-rootfs.sh 全文 end --------------------"
 
 uplog "-------------------- upx-hook.mk 关键行 --------------------"
-grep -n 'UpXRootfsHook\|UPX_HOOK_ENABLE\|UPX_LOG\|UPX_ROOTFS_SCRIPT\|file parsed' "$UPX_HOOK_MK" 2>&1 | uplog_block || true
+grep -n 'UpXRootfsHook\|UPX_HOOK_ENABLE\|UPX_LOG\|UPX_ROOTFS_SCRIPT\|file parsed\|TARGET_DIR' "$UPX_HOOK_MK" 2>&1 | uplog_block || true
+
+inject_rootfs_mk_include() {
+    _file="include/rootfs.mk"
+    if [ ! -f "$_file" ]; then
+        uplog "inject rootfs.mk include: missing $_file"
+        return 1
+    fi
+    if grep -qF 'include $(TOPDIR)/upx-hook.mk' "$_file"; then
+        uplog "inject rootfs.mk include: already contains upx-hook.mk"
+        return 0
+    fi
+    _tmp="$_file.upx.tmp.$$"
+    awk 'BEGIN{done=0} { if (!done && index($0, "define prepare_rootfs") > 0) { print "include $(TOPDIR)/upx-hook.mk"; done=1 } print } END{ if(!done) exit 1 }' "$_file" > "$_tmp"
+    _rc=$?
+    if [ $_rc -eq 0 ]; then
+        mv -f "$_tmp" "$_file"
+        uplog "inject rootfs.mk include: success before define prepare_rootfs in $_file"
+        return 0
+    else
+        rm -f "$_tmp"
+        uplog "inject rootfs.mk include: define prepare_rootfs anchor not found in $_file"
+        return 1
+    fi
+}
+
+inject_prepare_rootfs_call() {
+    _file="include/rootfs.mk"
+    if [ ! -f "$_file" ]; then
+        uplog "inject prepare_rootfs call: missing $_file"
+        return 1
+    fi
+    if grep -qF '$(call UpXRootfsHook,$(1))' "$_file"; then
+        uplog "inject prepare_rootfs call: already contains UpXRootfsHook call"
+        return 0
+    fi
+    _line_num=$(grep -n '$(call mklibs,$(1))' "$_file" | head -1 | cut -d: -f1)
+    if [ -z "$_line_num" ]; then
+        uplog "inject prepare_rootfs call: mklibs anchor not found in $_file"
+        return 1
+    fi
+    sed -i "${_line_num}a\\
+\t\$(call UpXRootfsHook,\$(1))" "$_file"
+    uplog "inject prepare_rootfs call: success after mklibs (line $_line_num) in $_file"
+    return 0
+}
 
 inject_before_buildimage() {
     _file="$1"
@@ -944,31 +984,15 @@ inject_before_buildimage() {
     fi
 }
 
-# 修正后的 inject_prepare_rootfs 函数，使用 grep 灵活匹配
-inject_prepare_rootfs() {
-    _file="include/rootfs.mk"
-    if [ ! -f "$_file" ]; then
-        uplog "inject prepare_rootfs: missing $_file"
-        return 1
-    fi
-    if grep -qF 'UpXRootfsHook' "$_file"; then
-        uplog "inject prepare_rootfs: already contains UpXRootfsHook"
-        return 0
-    fi
-    # 使用 grep -n 查找行号，容忍行首的制表符或空格
-    _line_num=$(grep -n '$(call mklibs,$(1))' "$_file" | head -1 | cut -d: -f1)
-    if [ -z "$_line_num" ]; then
-        uplog "inject prepare_rootfs: mklibs anchor not found in $_file"
-        return 1
-    fi
-    # 在目标行后插入 hook 调用
-    sed -i "${_line_num}a\\
-\t\$(call UpXRootfsHook,\$(1))" "$_file"
-    uplog "inject prepare_rootfs: success after mklibs (line $_line_num) in $_file"
-    return 0
-}
+uplog "-------------------- 注入 upx-hook.mk 到 include/rootfs.mk 开头 --------------------"
+inject_rootfs_mk_include
+ROOTFS_INCLUDE_INJECTED=$?
 
-uplog "-------------------- 注入 upx-hook.mk 到 target image Makefile --------------------"
+uplog "-------------------- 注入 UpXRootfsHook 调用到 prepare_rootfs --------------------"
+inject_prepare_rootfs_call
+PREPARE_CALL_INJECTED=$?
+
+uplog "-------------------- 注入 upx-hook.mk 到 target image Makefile（冗余保护） --------------------"
 UPX_INJECTED_COUNT=0
 for mf in $CANDIDATE_IMAGE_MAKEFILES; do
     if inject_before_buildimage "$mf"; then
@@ -977,50 +1001,50 @@ for mf in $CANDIDATE_IMAGE_MAKEFILES; do
 done
 uplog "UPX_INJECTED_COUNT=$UPX_INJECTED_COUNT"
 
-uplog "-------------------- 注入 UpXRootfsHook 到 include/rootfs.mk prepare_rootfs --------------------"
-inject_prepare_rootfs
-PREPARE_INJECTED=$?
+uplog "-------------------- 注入后 include/rootfs.mk 上下文 --------------------"
+{
+    echo "===== head -20 include/rootfs.mk ====="
+    head -20 include/rootfs.mk 2>&1 || true
+    echo "===== grep upx-hook.mk in include/rootfs.mk ====="
+    grep -n -B3 -A3 'upx-hook.mk' include/rootfs.mk 2>&1 || true
+    echo "===== grep UpXRootfsHook in include/rootfs.mk ====="
+    grep -n -B5 -A5 'UpXRootfsHook' include/rootfs.mk 2>&1 || true
+} 2>&1 | uplog_block || true
 
 uplog "-------------------- 注入后 target image Makefile 上下文 --------------------"
 for mf in $CANDIDATE_IMAGE_MAKEFILES; do
     {
         echo "===== grep upx-hook.mk in $mf ====="
         grep -n -B5 -A5 'upx-hook.mk' "$mf" 2>&1 || true
-        echo "===== tail -40 $mf ====="
-        tail -40 "$mf" 2>&1 || true
     } 2>&1 | uplog_block || true
 done
 
-uplog "-------------------- 注入后 include/rootfs.mk prepare_rootfs 上下文 --------------------"
-{
-    echo "===== grep UpXRootfsHook in include/rootfs.mk ====="
-    grep -n -B5 -A5 'UpXRootfsHook' include/rootfs.mk 2>&1 || true
-    echo "===== define prepare_rootfs head -80 ====="
-    grep -n -A80 'define prepare_rootfs' include/rootfs.mk 2>&1 | head -80 || true
-} 2>&1 | uplog_block || true
-
 uplog "-------------------- 全局锚点扫描（增强版） --------------------"
 {
-    echo "===== Full anchor scan for prepare_rootfs context ====="
-    grep -n -A30 'define prepare_rootfs' include/rootfs.mk | head -40
+    echo "===== BuildImage eval anchors ====="
+    grep -RIn --include=Makefile -F '$(eval $(call BuildImage))' target/linux/*/image/Makefile 2>&1 || true
+    echo "===== prepare_rootfs definitions ====="
+    grep -RIn --include='*.mk' 'define prepare_rootfs' include target/linux 2>&1 || true
+    echo "===== mklibs in prepare_rootfs ====="
+    grep -RIn --include='*.mk' 'call mklibs' include target/linux 2>&1 || true
+    echo "===== ROOTFS_POSTPROCESS_COMMAND ====="
+    grep -RIn --include='*.mk' 'ROOTFS_POSTPROCESS_COMMAND' include target/linux 2>&1 || true
+    echo "===== Image/Prepare ====="
+    grep -RIn --include='*.mk' 'Image/Prepare' include target/linux 2>&1 || true
     echo "===== All calls to prepare_rootfs ====="
-    grep -RIn --include='*.mk' 'call prepare_rootfs' . 2>/dev/null | head -20
-    echo "===== All calls to opkg in package/Makefile ====="
-    grep -n 'opkg\|prepare_rootfs' package/Makefile 2>/dev/null
+    grep -RIn --include='*.mk' 'call prepare_rootfs' . 2>/dev/null | head -20 || true
+    echo "===== package/Makefile prepare_rootfs/opkg ====="
+    grep -n 'prepare_rootfs\|opkg' package/Makefile 2>/dev/null || true
 } 2>&1 | uplog_block || true
 
 uplog "==================== UPX Hook 诊断+注入结束 ===================="
 uplog "重点检查:"
-uplog "1) make[2] package/install 后是否出现 [upx-mk] ===== file parsed ====="
-uplog "2) 是否出现 [upx-mk] defining UpXRootfsHook done"
-uplog "3) 是否出现 [upx] hook invoked rootfs=..."
-uplog "4) [upx-rootfs] UPX_TARGET_BINS / lookup bin=... standard=HIT/MISS"
-uplog "5) [upx-rootfs] cand size=... path=... 是否按大小降序"
-uplog "6) [upx-rootfs] SUMMARY total=... candidate=... compressed=... skipped=... failed=..."
-uplog "7) 没有 [upx-mk] 说明 upx-hook.mk 没被 target image Makefile include"
-uplog "8) 有 [upx-mk] 没有 [upx] hook invoked 说明 include/rootfs.mk 的 prepare_rootfs 注入未生效"
-uplog "9) 有 [upx] hook invoked 但 candidate=0 看 lookup bin 的 HIT/MISS 和 SKIP reason"
-uplog "10) PREPARE_INJECTED=$PREPARE_INJECTED"
+uplog "1) include/rootfs.mk 开头是否出现 include $(TOPDIR)/upx-hook.mk"
+uplog "2) make[2] package/install 后是否出现 [upx-mk] first include（说明 rootfs.mk include 生效）"
+uplog "3) 是否出现 [upx] hook invoked rootfs=.../root-... 或 TARGET_DIR 路径"
+uplog "4) 是否出现 [upx] also compressing TARGET_DIR=..."
+uplog "5) upx-hook.log 是否同时有 TARGET_DIR 和 target-dir-* 的 SUMMARY"
+uplog "6) ROOTFS_INCLUDE_INJECTED=$ROOTFS_INCLUDE_INJECTED PREPARE_CALL_INJECTED=$PREPARE_CALL_INJECTED"
 
 true
 # ==================== UPX HOOK DIAGNOSTIC + INJECTION END ====================
