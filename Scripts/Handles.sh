@@ -461,32 +461,32 @@ fi
 
 
 
-# ==================== UNIVERSAL UPX COMPRESS FOR ELF (ARCH-GUARDED) BEGIN ====================
-# 架构守卫：mips64 / riscv64 / loongarch64 直接跳过整个 UPX 注入段
-# 默认白名单模式（UPX_COMPRESS_ALL=0），可追加全量开关
-# 依赖：./package/openwrt-upx 提供的 upx/host
+# ==================== UPX COMPRESS FOR TARGET GO BINARIES BEGIN ====================
+# 精准注入：只处理 tailscale / sing-box / mihomo* / xray* 这几类 Makefile
+# 每类 Makefile 的 install 阶段直接压缩 $(1) 下所有 ELF（不需白名单 basename）
+# 架构守卫：mips64 / riscv64 / loongarch64 / unknown 直接跳过
+# 依赖：./package/openwrt-upx 提供的 upx/host（自动追加到 PKG_BUILD_DEPENDS）
 # ========================================================================
 set +e
 
 upx_log() { echo "[UPX] $*"; }
 
-# ---------- 架构探测：WRT_TARGET -> OpenWrt ARCH ----------
+# ---------- 架构探测 ----------
 upx_detect_arch() {
     local _t="${WRT_TARGET:-}"
     local _s="${WRT_SUBTARGET:-}"
     local _src="${WRT_SOURCE:-}"
-
-    # 显式已知映射（优先使用子目标/源码中的线索）
     case "$_t$_s$_src" in
         *qualcommax*|*ipq807x*|*ipq60xx*|*ipq50xx*) echo "aarch64"; return ;;
         *rockchip*|*rk33*|*rk35*)                   echo "aarch64"; return ;;
         *bcm27*|*bcm2710*|*bcm2711*|*raspberrypi*)  echo "aarch64"; return ;;
-        *x86*|*64*)                                 echo "x86_64";  return ;;
-        *mediatek*filogic*|*mt7622*|*mt7981*|*mt7986*) echo "aarch64"; return ;;
-        *mediatek*mt762*|*ramips*|*mt76*)           echo "mipsel";  return ;;
+        *mediatek*filogic*|*mt7622*|*mt7981*|*mt7986*|*mt7988*) echo "aarch64"; return ;;
+        *mediatek*mt762[0-9]*|*ramips*)             echo "mipsel";  return ;;
+        *armsr*armv8*|*armvirt/64*)                 echo "aarch64"; return ;;
+        *armsr*armv7*|*armvirt/32*)                 echo "arm";     return ;;
+        *x86/64*|*x86_64*|*x86-64*)                 echo "x86_64";  return ;;
+        *x86/generic*|*i386*)                       echo "i386";    return ;;
     esac
-
-    # 回退：如果 WRT_TARGET 本身包含架构关键词，直接识别
     case "$_t" in
         *mips64*)      echo "mips64";       return ;;
         *riscv64*)     echo "riscv64";      return ;;
@@ -494,48 +494,37 @@ upx_detect_arch() {
         *aarch64*)     echo "aarch64";      return ;;
         *arm*)         echo "arm";          return ;;
         *mips*)        echo "mips";         return ;;
-        *x86_64*)      echo "x86_64";       return ;;
     esac
-
     echo "unknown"
 }
 
 UPX_ARCH="$(upx_detect_arch)"
 upx_log "Detected ARCH=$UPX_ARCH (WRT_TARGET=${WRT_TARGET:-<unset>}, WRT_SUBTARGET=${WRT_SUBTARGET:-<unset>})"
 
-# ---------- 架构守卫：不支持则整段跳过 ----------
 case "$UPX_ARCH" in
     mips64|riscv64|loongarch64)
-        upx_log "ARCH=$UPX_ARCH is not supported by UPX for OpenWrt packages (mips64 has no UPX support; riscv64/loongarch64 not covered by the shipped upx version)."
-        upx_log "SKIP entire UPX injection. No Makefile was modified."
+        upx_log "ARCH=$UPX_ARCH not supported by UPX, SKIP whole injection."
         set -e
         return 0 2>/dev/null || exit 0
         ;;
     unknown)
-        upx_log "ARCH could not be reliably detected. To avoid accidental breakage, SKIP entire UPX injection."
+        upx_log "ARCH could not be detected, SKIP to be safe."
         set -e
         return 0 2>/dev/null || exit 0
         ;;
 esac
 
-# ---------- 压缩模式与目标列表 ----------
-UPX_COMPRESS_ALL="${UPX_COMPRESS_ALL:-0}"
-UPX_TARGET_BINS_DEFAULT="tailscaled sing-box mihomo xray"
-UPX_TARGET_BINS="${UPX_TARGET_BINS:-$UPX_TARGET_BINS_DEFAULT}"
-
-upx_log "UPX_COMPRESS_ALL=$UPX_COMPRESS_ALL"
-upx_log "UPX_TARGET_BINS=\"$UPX_TARGET_BINS\""
-
-upx_is_target_bin() {
-    local _base="$1"
-    [ "$UPX_COMPRESS_ALL" = "1" ] && return 0
-    for _b in $UPX_TARGET_BINS; do
-        [ "$_base" = "$_b" ] && return 0
-    done
+# ---------- 目标 Makefile 路径匹配 ----------
+# tailscale / sing-box / mihomo(-meta/-alpha/...) / xray(-core/...)
+upx_is_target_makefile() {
+    case "$1" in
+        */tailscale/Makefile|*/sing-box/Makefile|*/mihomo*/Makefile|*/xray*/Makefile)
+            return 0 ;;
+    esac
     return 1
 }
 
-# ---------- 提取 install 块（用于前后对比） ----------
+# ---------- 提取 install 块用于前后对比 ----------
 upx_extract_install_block() {
     local _file="$1"
     local _start
@@ -547,7 +536,6 @@ upx_extract_install_block() {
     sed -n "${_start},${_end}p" "$_file"
 }
 
-# ---------- 打印前后对比 ----------
 upx_print_diff() {
     local _file="$1"
     local _before="$2"
@@ -561,12 +549,12 @@ upx_print_diff() {
         while IFS= read -r _l; do echo "  | $_l"; done || true
 }
 
-# ---------- 注入函数 ----------
-inject_upx_universal() {
+# ---------- 注入压缩逻辑 ----------
+inject_upx_compress() {
     local MAKE_FILE="$1"
     [ -f "$MAKE_FILE" ] || { upx_log "SKIP not found: $MAKE_FILE"; return 0; }
 
-    if grep -q 'UPX_UNIVERSAL_INJECTED' "$MAKE_FILE" 2>/dev/null; then
+    if grep -q 'UPX_COMPRESS_INJECTED' "$MAKE_FILE" 2>/dev/null; then
         upx_log "SKIP already injected: $MAKE_FILE"
         return 0
     fi
@@ -587,11 +575,10 @@ inject_upx_universal() {
 
     upx_log "Processing: $MAKE_FILE (install block ${INSTALL_START}-${ENDEF_LINE})"
 
-    # 保存修改前快照
     local BEFORE_BLOCK
     BEFORE_BLOCK="$(upx_extract_install_block "$MAKE_FILE")"
 
-    # 1) 追加 upx/host 依赖
+    # 追加 upx/host 依赖
     if grep -q '^PKG_BUILD_DEPENDS' "$MAKE_FILE"; then
         if ! grep -q 'upx/host' "$MAKE_FILE"; then
             sed -i '/^PKG_BUILD_DEPENDS/s/$/ upx\/host/' "$MAKE_FILE"
@@ -602,37 +589,29 @@ inject_upx_universal() {
         upx_log "  + PKG_BUILD_DEPENDS:=upx/host inserted"
     fi
 
-    # 2) 在 endef 前插入压缩 shell
+    # 在 endef 前插入压缩 shell
     local TMP="${MAKE_FILE}.upx.tmp.$$"
     cp -f "$MAKE_FILE" "$TMP"
 
-    awk -v end="$ENDEF_LINE" -v all_mode="$UPX_COMPRESS_ALL" -v targets="$UPX_TARGET_BINS" '
+    awk -v end="$ENDEF_LINE" '
     NR == end {
-        print "\t@( _upx_should() { \\"
-        print "\t\t_local_base=$$(basename \"$$1\"); \\"
-        print "\t\tif [ \"" all_mode "\" = \"1\" ]; then return 0; fi; \\"
-        n = split(targets, arr, " ")
-        printf "\t\tfor _t in"
-        for (i = 1; i <= n; i++) printf " %s", arr[i]
-        print "; do \\"
-        print "\t\t\t[ \"$$_local_base\" = \"$$_t\" ] && return 0; \\"
-        print "\t\tdone; \\"
-        print "\t\treturn 1; \\"
-        print "\t}; \\"
-        print "\tfind $(1) -type f -perm -111 ! -name \"*.so*\" 2>/dev/null | while read f; do \\"
-        print "\t\tif head -c4 \"$$f\" 2>/dev/null | grep -q ELF && _upx_should \"$$f\"; then \\"
+        print "\t@( find $(1) -type f -perm -111 ! -name \"*.so*\" 2>/dev/null | while read f; do \\"
+        print "\t\tif head -c4 \"$$f\" 2>/dev/null | grep -q ELF; then \\"
+        print "\t\t\tif grep -aq \"UPX!\" \"$$f\" 2>/dev/null; then \\"
+        print "\t\t\t\tcontinue; \\"
+        print "\t\t\tfi; \\"
         print "\t\t\tchmod u+w \"$$f\"; \\"
         print "\t\t\t$(STAGING_DIR_HOST)/bin/upx --lzma --best \"$$f\" 2>/dev/null || true; \\"
         print "\t\tfi; \\"
         print "\tdone )"
-        print "# UPX_UNIVERSAL_INJECTED"
+        print "# UPX_COMPRESS_INJECTED"
     }
     { print }
     ' "$TMP" > "${TMP}.new"
 
     if [ -s "${TMP}.new" ]; then
         mv -f "${TMP}.new" "$MAKE_FILE"
-        upx_log "  + UPX compression shell injected (mode=$UPX_COMPRESS_ALL)"
+        upx_log "  + UPX compression shell injected"
     else
         upx_log "  ! empty output, reverting $MAKE_FILE"
         rm -f "$TMP" "${TMP}.new" 2>/dev/null
@@ -640,7 +619,6 @@ inject_upx_universal() {
     fi
     rm -f "$TMP" "${TMP}.new" 2>/dev/null
 
-    # 保存修改后快照并打印对比
     local AFTER_BLOCK
     AFTER_BLOCK="$(upx_extract_install_block "$MAKE_FILE")"
     upx_print_diff "$MAKE_FILE" "$BEFORE_BLOCK" "$AFTER_BLOCK"
@@ -649,18 +627,28 @@ inject_upx_universal() {
 # ---------- 扫描并注入 ----------
 UPX_SCAN_DIRS="./feeds ./package"
 UPX_MAKE_COUNT=0
+UPX_HIT_LIST=""
 
 for DIR in $UPX_SCAN_DIRS; do
     [ -d "$DIR" ] || continue
     while IFS= read -r MAKEFILE; do
         [ -f "$MAKEFILE" ] || continue
-        if grep -qE 'golang-package\.mk|GO_PKG' "$MAKEFILE" 2>/dev/null; then
-            inject_upx_universal "$MAKEFILE"
+        if upx_is_target_makefile "$MAKEFILE"; then
+            inject_upx_compress "$MAKEFILE"
             UPX_MAKE_COUNT=$((UPX_MAKE_COUNT + 1))
+            UPX_HIT_LIST="${UPX_HIT_LIST}${MAKEFILE}
+"
         fi
     done < <(find "$DIR" -type f -name 'Makefile' 2>/dev/null)
 done
 
-upx_log "Injection finished. ARCH=$UPX_ARCH, processed $UPX_MAKE_COUNT Makefile(s)."
+if [ "$UPX_MAKE_COUNT" -eq 0 ]; then
+    upx_log "WARNING: no target Makefile matched (tailscale/sing-box/mihomo*/xray*)."
+else
+    upx_log "Injection finished. ARCH=$UPX_ARCH, processed $UPX_MAKE_COUNT Makefile(s):"
+    while IFS= read -r _l; do
+        [ -n "$_l" ] && upx_log "  - $_l"
+    done <<< "$UPX_HIT_LIST"
+fi
 set -e
-# ==================== UNIVERSAL UPX COMPRESS FOR ELF (ARCH-GUARDED) END ====================
+# ==================== UPX COMPRESS FOR TARGET GO BINARIES END ====================
