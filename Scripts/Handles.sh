@@ -461,194 +461,189 @@ fi
 
 
 
-# ==================== UPX COMPRESS FOR TARGET GO BINARIES BEGIN ====================
-# 精准注入：只处理 tailscale / sing-box / mihomo* / xray* 这几类 Makefile
-# 每类 Makefile 的 install 阶段直接压缩 $(1) 下所有 ELF（不需白名单 basename）
-# 架构守卫：mips64 / riscv64 / loongarch64 / unknown 直接跳过
-# 依赖：./package/openwrt-upx 提供的 upx/host（自动追加到 PKG_BUILD_DEPENDS）
-# ========================================================================
+# ==================== UPX COMPRESS FOR GO BINARIES (PRECISION) BEGIN ====================
+# 精准注入 UPX 压缩，仅处理 tailscaled、sing-box、mihomo、xray
+# 依赖：./package/openwrt-upx 提供的 upx/host -> $(STAGING_DIR_HOST)/bin/upx
+# =======================================================================================
 set +e
 
-upx_log() { echo "[UPX] $*"; }
+UPX_INJECT_LOG() { echo "[UPX-INJECT] $*"; }
 
-# ---------- 架构探测 ----------
-upx_detect_arch() {
-    local _t="${WRT_TARGET:-}"
-    local _s="${WRT_SUBTARGET:-}"
-    local _src="${WRT_SOURCE:-}"
-    case "$_t$_s$_src" in
-        *qualcommax*|*ipq807x*|*ipq60xx*|*ipq50xx*) echo "aarch64"; return ;;
-        *rockchip*|*rk33*|*rk35*)                   echo "aarch64"; return ;;
-        *bcm27*|*bcm2710*|*bcm2711*|*raspberrypi*)  echo "aarch64"; return ;;
-        *mediatek*filogic*|*mt7622*|*mt7981*|*mt7986*|*mt7988*) echo "aarch64"; return ;;
-        *mediatek*mt762[0-9]*|*ramips*)             echo "mipsel";  return ;;
-        *armsr*armv8*|*armvirt/64*)                 echo "aarch64"; return ;;
-        *armsr*armv7*|*armvirt/32*)                 echo "arm";     return ;;
-        *x86/64*|*x86_64*|*x86-64*)                 echo "x86_64";  return ;;
-        *x86/generic*|*i386*)                       echo "i386";    return ;;
-    esac
-    case "$_t" in
-        *mips64*)      echo "mips64";       return ;;
-        *riscv64*)     echo "riscv64";      return ;;
-        *loongarch64*) echo "loongarch64";  return ;;
-        *aarch64*)     echo "aarch64";      return ;;
-        *arm*)         echo "arm";          return ;;
-        *mips*)        echo "mips";         return ;;
-    esac
-    echo "unknown"
+# 检查当前目标架构是否适合 UPX（跳过 mips64 / riscv64 / loongarch64）
+upx_arch_supported() {
+    local _target="${WRT_TARGET:-} ${ARCH:-}"
+    for _skip in mips64 riscv64 loongarch64; do
+        case "$_target" in *"$_skip"*) UPX_INJECT_LOG "SKIP arch: matched $_skip in '$_target'"; return 1;; esac
+    done
+    return 0
 }
 
-UPX_ARCH="$(upx_detect_arch)"
-upx_log "Detected ARCH=$UPX_ARCH (WRT_TARGET=${WRT_TARGET:-<unset>}, WRT_SUBTARGET=${WRT_SUBTARGET:-<unset>})"
-
-case "$UPX_ARCH" in
-    mips64|riscv64|loongarch64)
-        upx_log "ARCH=$UPX_ARCH not supported by UPX, SKIP whole injection."
-        set -e
-        return 0 2>/dev/null || exit 0
-        ;;
-    unknown)
-        upx_log "ARCH could not be detected, SKIP to be safe."
-        set -e
-        return 0 2>/dev/null || exit 0
-        ;;
-esac
-
-# ---------- 目标 Makefile 路径匹配 ----------
-# tailscale / sing-box / mihomo(-meta/-alpha/...) / xray(-core/...)
-upx_is_target_makefile() {
-    case "$1" in
-        */tailscale/Makefile|*/sing-box/Makefile|*/mihomo*/Makefile|*/xray*/Makefile)
-            return 0 ;;
+# 判断一行是否为“含二进制的安装行”
+# 匹配：$(INSTALL_BIN) ...  或  $(call GoPackage/Package/Install/Bin,$(1))
+is_bin_install_line() {
+    local line="$1"
+    case "$line" in
+        *'$(call GoPackage/Package/Install/Bin,$(1))'*) return 0 ;;
+        *'$(INSTALL_BIN)'*)
+            # 排除明显是配置/数据文件的行
+            case "$line" in
+                *.json*|*.conf*|*.cnf*|*.ini*|*.yaml*|*.yml*) return 1 ;;
+                *'/etc/'*) return 1 ;;
+                *'/usr/share/'*) return 1 ;;
+            esac
+            return 0
+            ;;
     esac
     return 1
 }
 
-# ---------- 提取 install 块用于前后对比 ----------
-upx_extract_install_block() {
-    local _file="$1"
-    local _start
-    _start=$(grep -n '^define Package/.*/install' "$_file" | head -1 | cut -d: -f1)
-    [ -n "$_start" ] || return 1
-    local _end
-    _end=$(awk -v s="$_start" 'NR > s && /^endef/ {print NR; exit}' "$_file")
-    [ -n "$_end" ] || return 1
-    sed -n "${_start},${_end}p" "$_file"
-}
-
-upx_print_diff() {
-    local _file="$1"
-    local _before="$2"
-    local _after="$3"
-    echo "  ---- BEFORE (install block) ----"
-    while IFS= read -r _l; do echo "  | $_l"; done <<< "$_before"
-    echo "  ---- AFTER  (install block) ----"
-    while IFS= read -r _l; do echo "  | $_l"; done <<< "$_after"
-    echo "  ---- DIFF ----"
-    diff -u <(printf '%s\n' "$_before") <(printf '%s\n' "$_after") 2>/dev/null | \
-        while IFS= read -r _l; do echo "  | $_l"; done || true
-}
-
-# ---------- 注入压缩逻辑 ----------
-inject_upx_compress() {
+# 核心：精准注入到单个 Makefile
+# $1: Makefile 路径
+# $2: 二进制基名（用于日志，如 tailscaled / sing-box / mihomo / xray）
+inject_upx_precise() {
     local MAKE_FILE="$1"
-    [ -f "$MAKE_FILE" ] || { upx_log "SKIP not found: $MAKE_FILE"; return 0; }
+    local BIN_LABEL="$2"
 
-    if grep -q 'UPX_COMPRESS_INJECTED' "$MAKE_FILE" 2>/dev/null; then
-        upx_log "SKIP already injected: $MAKE_FILE"
-        return 0
-    fi
+    [ -f "$MAKE_FILE" ] || { UPX_INJECT_LOG "SKIP: missing $MAKE_FILE"; return 0; }
+    [ -w "$MAKE_FILE" ] || { UPX_INJECT_LOG "SKIP: read-only $MAKE_FILE"; return 0; }
 
-    local INSTALL_START
-    INSTALL_START=$(grep -n '^define Package/.*/install' "$MAKE_FILE" | head -1 | cut -d: -f1)
-    if [ -z "$INSTALL_START" ]; then
-        upx_log "SKIP no 'define Package/.../install': $MAKE_FILE"
-        return 0
-    fi
+    # 防重复：检查标记
+    grep -qF '# UPX_PRECISION_INJECTED' "$MAKE_FILE" && { UPX_INJECT_LOG "SKIP: already injected $MAKE_FILE"; return 0; }
 
-    local ENDEF_LINE
-    ENDEF_LINE=$(awk -v s="$INSTALL_START" 'NR > s && /^endef/ {print NR; exit}' "$MAKE_FILE")
-    if [ -z "$ENDEF_LINE" ]; then
-        upx_log "SKIP endef not found: $MAKE_FILE"
-        return 0
-    fi
+    UPX_INJECT_LOG "Processing: $MAKE_FILE  (bin=$BIN_LABEL)"
 
-    upx_log "Processing: $MAKE_FILE (install block ${INSTALL_START}-${ENDEF_LINE})"
-
-    local BEFORE_BLOCK
-    BEFORE_BLOCK="$(upx_extract_install_block "$MAKE_FILE")"
-
-    # 追加 upx/host 依赖
-    if grep -q '^PKG_BUILD_DEPENDS' "$MAKE_FILE"; then
-        if ! grep -q 'upx/host' "$MAKE_FILE"; then
-            sed -i '/^PKG_BUILD_DEPENDS/s/$/ upx\/host/' "$MAKE_FILE"
-            upx_log "  + upx/host added to PKG_BUILD_DEPENDS"
+    # 1) 注入 upx/host 依赖
+    if ! grep -q 'upx/host' "$MAKE_FILE"; then
+        if grep -q '^PKG_BUILD_DEPENDS' "$MAKE_FILE"; then
+            sed -i '/^PKG_BUILD_DEPENDS/ s/$/ upx\/host/' "$MAKE_FILE" 2>/dev/null
+        else
+            sed -i '/^include \$(TOPDIR)\/rules.mk/a\PKG_BUILD_DEPENDS:=upx/host' "$MAKE_FILE" 2>/dev/null
         fi
-    else
-        sed -i '/^include \$(TOPDIR)\/rules.mk/a\PKG_BUILD_DEPENDS:=upx/host' "$MAKE_FILE"
-        upx_log "  + PKG_BUILD_DEPENDS:=upx/host inserted"
+        UPX_INJECT_LOG "  + upx/host added to PKG_BUILD_DEPENDS"
     fi
 
-    # 在 endef 前插入压缩 shell
-    local TMP="${MAKE_FILE}.upx.tmp.$$"
-    cp -f "$MAKE_FILE" "$TMP"
+    # 2) 逐行处理，跟踪 install 块，精准替换
+    local TMP="${MAKE_FILE}.upxprec.$$"
+    local IN_INSTALL=0
+    local MOD_COUNT=0
+    : > "$TMP"
 
-    awk -v end="$ENDEF_LINE" '
-    NR == end {
-        print "\t@( find $(1) -type f -perm -111 ! -name \"*.so*\" 2>/dev/null | while read f; do \\"
-        print "\t\tif head -c4 \"$$f\" 2>/dev/null | grep -q ELF; then \\"
-        print "\t\t\tif grep -aq \"UPX!\" \"$$f\" 2>/dev/null; then \\"
-        print "\t\t\t\tcontinue; \\"
-        print "\t\t\tfi; \\"
-        print "\t\t\tchmod u+w \"$$f\"; \\"
-        print "\t\t\t$(STAGING_DIR_HOST)/bin/upx --lzma --best \"$$f\" 2>/dev/null || true; \\"
-        print "\t\tfi; \\"
-        print "\tdone )"
-        print "# UPX_COMPRESS_INJECTED"
-    }
-    { print }
-    ' "$TMP" > "${TMP}.new"
+    while IFS= read -r line || [ -n "$line" ]; do
+        # 进入 install 块
+        if printf '%s\n' "$line" | grep -qE '^define Package/[^/]+/install'; then
+            IN_INSTALL=1
+            printf '%s\n' "$line" >> "$TMP"
+            continue
+        fi
+        # 离开 install 块
+        if [ "$IN_INSTALL" -eq 1 ] && printf '%s\n' "$line" | grep -qE '^endef'; then
+            IN_INSTALL=0
+            printf '%s\n' "$line" >> "$TMP"
+            continue
+        fi
 
-    if [ -s "${TMP}.new" ]; then
-        mv -f "${TMP}.new" "$MAKE_FILE"
-        upx_log "  + UPX compression shell injected"
+        if [ "$IN_INSTALL" -eq 1 ] && is_bin_install_line "$line"; then
+            MOD_COUNT=$((MOD_COUNT + 1))
+            UPX_INJECT_LOG "  Matched install line in $MAKE_FILE: $line"
+            printf '%s\n' "# UPX_PRECISION_INJECTED (original: $line)" >> "$TMP"
+
+            # 分支 A：GoPackage/Package/Install/Bin
+            case "$line" in
+                *'$(call GoPackage/Package/Install/Bin,$(1))'*)
+                    cat >> "$TMP" <<'UPX_GOINSTALL'
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/.upx
+	$(call GoPackage/Package/Install/Bin,$(PKG_BUILD_DIR)/.upx)
+	@for f in $(PKG_BUILD_DIR)/.upx$(or $(GO_PKG_INSTALL_BIN_PATH),/usr/bin)/*; do \
+		if [ -f "$$f" ] && [ -x "$$f" ]; then \
+			if [ -x "$(STAGING_DIR_HOST)/bin/upx" ]; then \
+				echo "[UPX] compressing $$f"; \
+				SZ0=$$(stat -c %s "$$f" 2>/dev/null || echo 0); \
+				$(STAGING_DIR_HOST)/bin/upx --lzma --best "$$f" || true; \
+				SZ1=$$(stat -c %s "$$f" 2>/dev/null || echo 0); \
+				echo "[UPX] done $$f  $$SZ0 -> $$SZ1"; \
+			else \
+				echo "[UPX] upx not found, skip $$f"; \
+			fi; \
+			$(INSTALL_BIN) "$$f" $(1)$(or $(GO_PKG_INSTALL_BIN_PATH),/usr/bin)/; \
+		fi; \
+	done
+UPX_GOINSTALL
+                    continue
+                    ;;
+            esac
+
+            # 分支 B：$(INSTALL_BIN) source dest
+            # 提取 source 与 dest（取最后两个非空字段）
+            local SRC DST
+            SRC=$(printf '%s\n' "$line" | awk '{for(i=1;i<=NF;i++){if($i ~ /\$\(INSTALL_BIN\)/){src=$(i+1); dst=$NF}} print src}')
+            DST=$(printf '%s\n' "$line" | awk '{for(i=1;i<=NF;i++){if($i ~ /\$\(INSTALL_BIN\)/){src=$(i+1); dst=$NF}} print dst}')
+            if [ -n "$SRC" ] && [ -n "$DST" ]; then
+                local BNAME
+                BNAME=$(basename "$SRC")
+                cat >> "$TMP" <<UPX_INSTALLBIN
+	$(INSTALL_DIR) $(PKG_BUILD_DIR)/.upx
+	$(INSTALL_BIN) $SRC $(PKG_BUILD_DIR)/.upx/$BNAME
+	@if [ -x "$(STAGING_DIR_HOST)/bin/upx" ]; then \\
+		echo "[UPX] compressing $BNAME"; \\
+		SZ0=\$\$(stat -c %s $(PKG_BUILD_DIR)/.upx/$BNAME 2>/dev/null || echo 0); \\
+		$(STAGING_DIR_HOST)/bin/upx --lzma --best $(PKG_BUILD_DIR)/.upx/$BNAME || true; \\
+		SZ1=\$\$(stat -c %s $(PKG_BUILD_DIR)/.upx/$BNAME 2>/dev/null || echo 0); \\
+		echo "[UPX] done $BNAME  \$\$SZ0 -> \$\$SZ1"; \\
+	else \\
+		echo "[UPX] upx not found, skip $BNAME"; \\
+	fi
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/.upx/$BNAME $DST
+UPX_INSTALLBIN
+                UPX_INJECT_LOG "  Injected INSTALL_BIN: $BNAME -> $DST"
+                continue
+            fi
+        fi
+
+        printf '%s\n' "$line" >> "$TMP"
+    done < "$MAKE_FILE"
+
+    # 3) 应用修改（若至少处理了一行）
+    if [ "$MOD_COUNT" -gt 0 ] && [ -s "$TMP" ]; then
+        cp -f "$MAKE_FILE" "${MAKE_FILE}.bak.$$" 2>/dev/null
+        mv -f "$TMP" "$MAKE_FILE" 2>/dev/null && {
+            echo "# UPX_PRECISION_INJECTED" | cat - "$MAKE_FILE" > "${MAKE_FILE}.tag.$$" 2>/dev/null && mv -f "${MAKE_FILE}.tag.$$" "$MAKE_FILE"
+            UPX_INJECT_LOG "  injected $MOD_COUNT line(s) into $MAKE_FILE"
+        }
+        rm -f "${MAKE_FILE}.bak.$$" 2>/dev/null
+
+        # 打印修改前后关键对比（install 块）
+        UPX_INJECT_LOG "  ---- BEFORE (install block) ----"
+        sed -n '/^define Package\/.*\/install/,/^endef/p' "${MAKE_FILE}.bak.$$" 2>/dev/null | while IFS= read -r l; do UPX_INJECT_LOG "  | $l"; done
+        UPX_INJECT_LOG "  ---- AFTER (install block) ----"
+        sed -n '/^define Package\/.*\/install/,/^endef/p' "$MAKE_FILE" 2>/dev/null | while IFS= read -r l; do UPX_INJECT_LOG "  | $l"; done
     else
-        upx_log "  ! empty output, reverting $MAKE_FILE"
-        rm -f "$TMP" "${TMP}.new" 2>/dev/null
-        return 0
+        UPX_INJECT_LOG "  no binary install lines found, skip"
     fi
-    rm -f "$TMP" "${TMP}.new" 2>/dev/null
-
-    local AFTER_BLOCK
-    AFTER_BLOCK="$(upx_extract_install_block "$MAKE_FILE")"
-    upx_print_diff "$MAKE_FILE" "$BEFORE_BLOCK" "$AFTER_BLOCK"
+    rm -f "$TMP" 2>/dev/null
 }
 
-# ---------- 扫描并注入 ----------
-UPX_SCAN_DIRS="./feeds ./package"
-UPX_MAKE_COUNT=0
-UPX_HIT_LIST=""
+# ==================== 主流程 ====================
+if upx_arch_supported; then
+    # tailscale
+    TS_MK=$(find "$FEEDS_PATH/packages" -maxdepth 4 -type f -wholename '*/tailscale/Makefile' -print -quit 2>/dev/null)
+    [ -n "$TS_MK" ] && [ -f "$TS_MK" ] && inject_upx_precise "$TS_MK" "tailscaled"
 
-for DIR in $UPX_SCAN_DIRS; do
-    [ -d "$DIR" ] || continue
-    while IFS= read -r MAKEFILE; do
-        [ -f "$MAKEFILE" ] || continue
-        if upx_is_target_makefile "$MAKEFILE"; then
-            inject_upx_compress "$MAKEFILE"
-            UPX_MAKE_COUNT=$((UPX_MAKE_COUNT + 1))
-            UPX_HIT_LIST="${UPX_HIT_LIST}${MAKEFILE}
-"
-        fi
-    done < <(find "$DIR" -type f -name 'Makefile' 2>/dev/null)
-done
+    # sing-box（可能在 package/ 或 feeds/packages）
+    SB_MK=$(find "$PACKAGE_PATH" "$FEEDS_PATH/packages" -maxdepth 6 -type f -wholename '*/sing-box/Makefile' -print -quit 2>/dev/null)
+    [ -n "$SB_MK" ] && [ -f "$SB_MK" ] && inject_upx_precise "$SB_MK" "sing-box"
 
-if [ "$UPX_MAKE_COUNT" -eq 0 ]; then
-    upx_log "WARNING: no target Makefile matched (tailscale/sing-box/mihomo*/xray*)."
+    # mihomo（mihomo-meta / mihomo-alpha）
+    for MH_MK in $(find "$PACKAGE_PATH" "$FEEDS_PATH/packages" -maxdepth 6 -type f -wholename '*/mihomo*/Makefile' 2>/dev/null); do
+        [ -f "$MH_MK" ] && inject_upx_precise "$MH_MK" "mihomo"
+    done
+
+    # xray-core
+    XR_MK=$(find "$PACKAGE_PATH" "$FEEDS_PATH/packages" -maxdepth 6 -type f -wholename '*/xray-core/Makefile' -print -quit 2>/dev/null)
+    [ -n "$XR_MK" ] && [ -f "$XR_MK" ] && inject_upx_precise "$XR_MK" "xray"
 else
-    upx_log "Injection finished. ARCH=$UPX_ARCH, processed $UPX_MAKE_COUNT Makefile(s):"
-    while IFS= read -r _l; do
-        [ -n "$_l" ] && upx_log "  - $_l"
-    done <<< "$UPX_HIT_LIST"
+    UPX_INJECT_LOG "架构不支持，跳过全部 UPX 注入。"
 fi
+
+UPX_INJECT_LOG "UPX precision injection completed."
 set -e
-# ==================== UPX COMPRESS FOR TARGET GO BINARIES END ====================
+# ==================== UPX COMPRESS FOR GO BINARIES (PRECISION) END ====================
