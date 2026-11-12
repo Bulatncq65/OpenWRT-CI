@@ -11,12 +11,13 @@ find ./feeds/luci/modules/luci-mod-system/ -type f -name "flash.js" -exec sed -i
 #添加编译日期标识
 find ./feeds/luci/modules/luci-mod-status/ -type f -name "10_system.js" -exec sed -i "s/(\(luciversion || ''\))/(\1) + (' \/ $WRT_MARK-$WRT_DATE')/g" {} +
 
-#修改默认WIFI账号密码
 WIFI_UC="./package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc"
-ROUTER_TOOL="./package/emortal/luci-app-router-tool/root/etc/config/router-tool"
-for file in "$ROUTER_TOOL" "$WIFI_UC"; do
-	[ -f "$file" ] && sed -i "s/ssid '.*'/ssid '$WRT_SSID'/g; s/key '.*'/key '$WRT_WORD'/g" "$file"
-done
+if [ -f "$WIFI_UC" ]; then
+	#修改WIFI名称
+	sed -i "s/ssid='.*'/ssid='$WRT_SSID'/g" $WIFI_UC
+	#修改WIFI密码
+	sed -i "s/key='.*'/key='$WRT_WORD'/g" $WIFI_UC
+fi
 
 CFG_FILE="./package/base-files/files/bin/config_generate"
 #修改默认IP地址
@@ -50,4 +51,21 @@ if [[ "${WRT_TARGET^^}" == *"QUALCOMMAX"* ]]; then
 		find $DTS_PATH -type f ! -iname '*nowifi*' -exec sed -i 's/ipq\(6018\|8074\).dtsi/ipq\1-nowifi.dtsi/g' {} +
 		echo "qualcommax set up nowifi successfully!"
 	fi
+    if [[ "${WRT_BRANCH^^}" == "OWRT" ]]; then
+    # 给标准 sqm-scripts 注入 ppe_cake.qos（PPE shaper device + CAKE + L4S）
+       mkdir -p ./feeds/packages/net/sqm-scripts/patches
+       for F in ppe_cake.qos ppe_cake.qos.help; do
+       	curl -fsL "https://raw.githubusercontent.com/JuliusBairaktaris/sqm-scripts/ppe-cake/src/$F" -o "/tmp/$F" || { echo "警告: 拉取 $F 失败，sqm 将退回标准脚本"; continue; }
+       	{
+       		echo "--- a/src/$F"
+       		echo "+++ b/src/$F"
+       		echo "@@ -0,0 +1,$(wc -l < "/tmp/$F") @@"
+       		sed 's/^/+/' "/tmp/$F"
+       	} > "./feeds/packages/net/sqm-scripts/patches/200-$F.patch"
+       done
+	  echo "  "&& echo "给标准 sqm-scripts 注入 ppe_cake.qos 成功!"
+    fi
 fi
+
+
+
