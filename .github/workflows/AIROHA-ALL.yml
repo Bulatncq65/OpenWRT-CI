@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       #max-parallel: 3
       matrix:
-        CONFIG: [AIROHA-AN7581, AIROHA-AN7583]
+        CONFIG: [AIROHA-AN7581,AIROHA-AN7581-USB, AIROHA-AN7583]
         SOURCE: [VIKINGYFY/immortalwrt]
         BRANCH: [owrt]
 
@@ -45,15 +45,15 @@ jobs:
       #编译配置
       WRT_CONFIG: ${{matrix.CONFIG}}
       #默认主题
-      WRT_THEME: vantage
+      WRT_THEME: argon
       #默认主机名
-      WRT_NAME: OWRT
+      WRT_NAME: AIROHA
       #默认WIFI名称
-      WRT_SSID: OWRT
+      WRT_SSID: AIROHA
       #默认WIFI密码
-      WRT_WORD: 12345678
+      WRT_WORD: 87654321
       #默认地址
-      WRT_IP: 192.168.10.1
+      WRT_IP: 192.168.1.1
       #默认密码，仅作提示，修改无用
       WRT_PW: 无
       #源码链接
