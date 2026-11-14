@@ -380,7 +380,7 @@ if [ -f "$XRAY_FILE" ]; then
 	sed -i "/PKG_VERSION:=/cPKG_VERSION:=26.11.9"  "$XRAY_FILE"
 	sed -i "/PKG_HASH:=/cPKG_HASH:=d5a47bed1b85e1cdfe3cb2f88a02e2db7144f0f8bee541d20b84fafa8fdf6c8d"  "$XRAY_FILE"
 	echo "xray-core version has update to 26.11.9!"
-   #add_upx_compress "$XRAY_FILE" "xray" "usr/bin" && echo "xray 将被压缩"
+
 	echo " "
     echo "---- xray-core_Makefile内容 start ----"
     cat  "$XRAY_FILE"
@@ -394,8 +394,7 @@ MIHOMO_ALPHA_FILE=$(find "$PACKAGE_PATH" -maxdepth 5 -type f -wholename "*/mihom
 if [ -f "$MIHOMO_META_FILE" ]; then
 	echo " "
 	sed -i "/GO_PKG_TAGS:=/cGO_PKG_TAGS:=with_gvisor,no_fake_tcp,no_tailscale,no_zerotier,no_easytier"  "$MIHOMO_META_FILE"
-
-   #add_upx_compress "$MIHOMO_META_FILE" "mihomo" "/usr/libexec" && echo "mihomo 将被压缩"
+	sed -i "/GO_PKG_TAGS:=/cGO_PKG_TAGS:=with_gvisor,no_fake_tcp,no_tailscale,no_zerotier,no_easytier"  "$MIHOMO_ALPHA_FILE"
 	echo " "
     echo "---- mihomo-meta_Makefile内容 start ----"
     cat "$MIHOMO_META_FILE"
@@ -412,7 +411,7 @@ fi
 SING_BOX_FILE=$(find "$PACKAGE_PATH" -maxdepth 3 -type f -wholename "*/sing-box/Makefile")
 if [ -f "$SING_BOX_FILE" ]; then
 	echo " "
-   #add_upx_compress "$SING_BOX_FILE" "sing-box" "usr/bin" && echo "xray 将被压缩"
+	sed -i "/GO_PKG_TAGS:=http2legacy,/cGO_PKG_TAGS:=http2legacy,with_acme,with_clash_api,with_dhcp,with_gvisor,with_quic,with_utls,with_wireguard"  "$SING_BOX_FILE"
 	echo " "
     echo "---- sing-box_Makefile内容 start ----"
     cat "$SING_BOX_FILE"
@@ -432,13 +431,13 @@ if [ -f "$TS_FILE" ]; then
      echo " " && echo "tailscale 使用1.94.2版本"	
      sed -i 's|PKG_BUILD_DEPENDS:=golang/host|PKG_BUILD_DEPENDS:=golang1.26/host|'  "$TS_FILE"
      echo " " &&echo "tailscale 已指定使用 golang1.26"
+     sed -i "/GO_PKG_TAGS:=/cGO_PKG_TAGS:=ts_include_cli,ts_omit_aws,ts_omit_bird,ts_omit_completion,ts_omit_kube,ts_omit_systray,ts_omit_taildrop,ts_omit_tap,ts_omit_tpm" "$TS_FILE"
      echo " "
      if sed -i '/\/files/d' "$TS_FILE"; then
      	echo "tailscale has been fixed!"
      else
      	echo "tailscale fix failed; continuing!"
      fi
-   #add_upx_compress "$TS_FILE" "tailscaled" "usr/sbin" && echo "tailscaled 将被压缩"
     echo "---- tailscale_Makefile内容 start ----"
     cat "$TS_FILE"
     echo "---- tailscale_Makefile内容 end ----"
@@ -451,7 +450,6 @@ if [ -f "$EASYTIER_CORE" ]; then
 	echo " "
     sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_CORE"
 	echo "easytier-core version has update to 2.6.4!"
-   #add_upx_compress "$EASYTIER_CORE" "easytier-core" "usr/bin" && echo "xray 将被压缩"
 	echo " "
     echo "---- easytier-core_Makefile内容 start ----"
     cat  "$EASYTIER_CORE"
