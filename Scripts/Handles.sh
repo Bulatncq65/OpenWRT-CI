@@ -445,14 +445,20 @@ if [ -f "$TS_FILE" ]; then
 fi
 
 EASYTIER_CORE="$(find "$PACKAGE_PATH" -maxdepth 4 -type f -path '*/easytier/Makefile' -print -quit 2>/dev/null)"
+EASYTIER_NOWEB="$(find "$PACKAGE_PATH" -maxdepth 4 -type f -path '*/easytier-noweb/Makefile' -print -quit 2>/dev/null)"
 
 if [ -f "$EASYTIER_CORE" ]; then
 	echo " "
     sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_CORE"
+    sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_NOWEB"
 	echo "easytier-core version has update to 2.6.4!"
 	echo " "
     echo "---- easytier-core_Makefile内容 start ----"
     cat  "$EASYTIER_CORE"
     echo "---- easytier-core_Makefile内容 end ----"
 	echo " "
+    echo "---- easytier-noweb_Makefile内容 start ----"
+    cat  "$EASYTIER_NOWEB"
+    echo "---- easytier-noweb_Makefile内容 end ----"
+    echo " "
 fi
