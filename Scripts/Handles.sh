@@ -450,7 +450,7 @@ EASYTIER_NOWEB="$(find "$PACKAGE_PATH" -maxdepth 4 -type f -path '*/easytier-now
 if [ -f "$EASYTIER_CORE" ]; then
 	echo " "
     sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_CORE"
-    sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_NOWEB"
+    #sed -i '/^PKG_VERSION:=/c\PKG_VERSION:=$(or $(EASYTIER_VERSION),2.6.4)' "$EASYTIER_NOWEB"
 	echo "easytier-core version has update to 2.6.4!"
 	echo " "
     echo "---- easytier-core_Makefile内容 start ----"
