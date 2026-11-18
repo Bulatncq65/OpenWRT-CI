@@ -2,16 +2,12 @@
 CONFIG_USE_GC_SECTIONS=y
 CONFIG_USE_LTO=y
 CONFIG_PACKAGE_luci-app-nikki=y
-CONFIG_PACKAGE_luci-app-upnp=y
 
 CONFIG_PACKAGE_easytier-noweb=y
 #CONFIG_PACKAGE_easytier=y
 #CONFIG_EASYTIER_INCLUDE_WEBCONSOLE=n
 CONFIG_PACKAGE_luci-app-easytier=y
 
-CONFIG_PACKAGE_iputils-arping=y
-CONFIG_PACKAGE_wrtbwmon=y
-CONFIG_PACKAGE_luci-app-pushbot=y
 
 CONFIG_PACKAGE_luci-app-filemanager=y
 CONFIG_PACKAGE_arp-scan=y
